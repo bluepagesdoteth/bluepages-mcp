@@ -1,0 +1,33 @@
+{
+  "name": "@bluepages/mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Bluepages crypto address/identity lookups",
+  "type": "module",
+  "bin": {
+    "bluepages-mcp": "./src/mcp-server.js"
+  },
+  "files": [
+    "src/"
+  ],
+  "license": "MIT",
+  "homepage": "https://bluepages.fyi",
+  "repository": "https://github.com/bluepagesdoteth/bluepages-mcp",
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*": "prettier --write --ignore-unknown"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "ethers": "^6.0.0",
+    "node-fetch": "^3.0.0"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.8.1"
+  }
+}
