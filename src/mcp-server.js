@@ -6,7 +6,7 @@
  * to expose bluepages functionality to AI assistants.
  *
  * Features:
- * - Tools for address/Twitter lookups
+ * - Tools for address/identity lookups
  * - Resources for API info and pricing
  * - Prompts for common workflows
  * - Streaming for batch operations
@@ -327,22 +327,8 @@ function formatResult(result, query) {
     output.push(`Address: ${result.address}`);
   }
 
-  // New format: identities array
   if (result.identities && result.identities.length > 0) {
-    const twitter = result.identities.find((i) => i.type === "twitter");
-    const farcaster = result.identities.find((i) => i.type === "farcaster");
-    const email = result.identities.find((i) => i.type === "email");
-
-    if (twitter) output.push(`Twitter: ${twitter.value} (${twitter.source})`);
-    if (farcaster)
-      output.push(`Farcaster: ${farcaster.value} (${farcaster.source})`);
-    if (email) output.push(`Email: ${email.value} (${email.source})`);
-
-    // Show all identities if there are more
-    const otherIdentities = result.identities.filter(
-      (i) => !["twitter", "farcaster", "email"].includes(i.type),
-    );
-    for (const identity of otherIdentities) {
+    for (const identity of result.identities) {
       output.push(`${identity.type}: ${identity.value} (${identity.source})`);
     }
   }
@@ -493,18 +479,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
     },
     {
-      name: "check_twitter",
+      name: "check_identity",
       description:
-        "Check if a Twitter/X handle exists in the Bluepages database. Returns whether data is available. Cost: 1 credit ($0.001 USD).",
+        "Check if an identity (Twitter handle, email, Farcaster, GitHub, Discord, etc.) exists in the Bluepages database. Returns whether data is available. Cost: 1 credit ($0.001 USD).",
       inputSchema: {
         type: "object",
         properties: {
-          twitter: {
+          identity: {
             type: "string",
-            description: "Twitter/X handle (with or without @)",
+            description: "Identity to check: Twitter handle, email address, Farcaster username, GitHub username, Discord ID, etc.",
           },
         },
-        required: ["twitter"],
+        required: ["identity"],
       },
     },
     {
@@ -524,24 +510,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
     },
     {
-      name: "get_data_for_twitter",
+      name: "get_data_for_identity",
       description:
-        "Get Ethereum addresses for a SINGLE Twitter handle. For MULTIPLE handles, use batch_get_data instead (faster and cheaper). Cost: 50 credits when data found, free if not found.",
+        "Get addresses and identity data for a SINGLE identity (Twitter handle, email, Farcaster, GitHub, Discord, etc.). For MULTIPLE identities, use batch_get_data instead (faster and cheaper). Cost: 50 credits when data found, free if not found.",
       inputSchema: {
         type: "object",
         properties: {
-          twitter: {
+          identity: {
             type: "string",
-            description: "Twitter/X handle (with or without @)",
+            description: "Identity to look up: Twitter handle, email address, Farcaster username, GitHub username, Discord ID, etc.",
           },
         },
-        required: ["twitter"],
+        required: ["identity"],
       },
     },
     {
       name: "batch_check",
       description:
-        "Check multiple addresses and/or Twitter handles at once (up to 50 total). More efficient than individual checks. Cost: 40 credits ($0.04 USD) per batch.",
+        "Check multiple addresses and/or identities at once (up to 50 total). More efficient than individual checks. Note: identity lookup currently matches Twitter handles only. Cost: 40 credits ($0.04 USD) per batch.",
       inputSchema: {
         type: "object",
         properties: {
@@ -549,13 +535,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             type: "array",
             items: { type: "string" },
             description:
-              "Array of Ethereum addresses to check (max 50 total with twitters)",
+              "Array of Ethereum addresses to check (max 50 total with identities)",
           },
-          twitters: {
+          identities: {
             type: "array",
             items: { type: "string" },
             description:
-              "Array of Twitter handles to check (max 50 total with addresses)",
+              "Array of identities (Twitter handles) to check (max 50 total with addresses). Note: currently only matches Twitter handles.",
           },
         },
       },
@@ -563,7 +549,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     {
       name: "batch_get_data",
       description:
-        "RECOMMENDED for multiple addresses. Get full data for up to 50 addresses/Twitter handles at once. Much cheaper than individual get_data calls. First use batch_check to find which have data, then call this. Cost: API key users pay 40 credits per item found; x402 users pay $2.00 flat per batch.",
+        "RECOMMENDED for multiple addresses. Get full data for up to 50 addresses/identities at once. Much cheaper than individual get_data calls. First use batch_check to find which have data, then call this. Note: identity lookup currently matches Twitter handles only. Cost: API key users pay 40 credits per item found; x402 users pay $2.00 flat per batch.",
       inputSchema: {
         type: "object",
         properties: {
@@ -572,10 +558,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             items: { type: "string" },
             description: "Array of Ethereum addresses to get data for",
           },
-          twitters: {
+          identities: {
             type: "array",
             items: { type: "string" },
-            description: "Array of Twitter handles to get data for",
+            description: "Array of identities (Twitter handles) to get data for. Note: currently only matches Twitter handles.",
           },
         },
       },
@@ -724,20 +710,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case "check_twitter": {
-        const twitter = args.twitter.startsWith("@")
-          ? args.twitter
-          : `@${args.twitter}`;
+      case "check_identity": {
         const result = await getWithAuth(
-          `${API_URL}/check?identity=${encodeURIComponent(twitter)}`,
+          `${API_URL}/check?identity=${encodeURIComponent(args.identity)}`,
         );
         return {
           content: [
             {
               type: "text",
               text: result.exists
-                ? `✓ ${twitter} found in database (types: ${result.types?.join(", ") || "unknown"})`
-                : `✗ ${twitter} not found in database`,
+                ? `✓ "${args.identity}" found in database (types: ${result.types?.join(", ") || "unknown"})`
+                : `✗ "${args.identity}" not found in database`,
             },
           ],
         };
@@ -757,18 +740,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case "get_data_for_twitter": {
-        const twitter = args.twitter.startsWith("@")
-          ? args.twitter
-          : `@${args.twitter}`;
+      case "get_data_for_identity": {
         const result = await getWithAuth(
-          `${API_URL}/data?identity=${encodeURIComponent(twitter)}`,
+          `${API_URL}/data?identity=${encodeURIComponent(args.identity)}`,
         );
         return {
           content: [
             {
               type: "text",
-              text: formatResult(result, twitter),
+              text: formatResult(result, args.identity),
             },
           ],
         };
@@ -779,21 +759,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (args.addresses && args.addresses.length > 0) {
           body.addresses = args.addresses;
         }
-        if (args.twitters && args.twitters.length > 0) {
-          body.twitters = args.twitters.map((t) =>
+        if (args.identities && args.identities.length > 0) {
+          body.twitters = args.identities.map((t) =>
             t.startsWith("@") ? t : `@${t}`,
           );
         }
 
         if (!body.addresses && !body.twitters) {
-          throw new Error("At least one address or twitter handle required");
+          throw new Error("At least one address or identity required");
         }
 
         const result = await postWithAuth(`${API_URL}/batch/check`, body);
 
-        // Format summary - results are objects keyed by address/twitter
         let foundAddresses = 0;
-        let foundTwitters = 0;
+        let foundIdentities = 0;
 
         if (result.results?.addresses) {
           foundAddresses = Object.values(result.results.addresses).filter(
@@ -801,21 +780,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ).length;
         }
         if (result.results?.twitters) {
-          foundTwitters = Object.values(result.results.twitters).filter(
+          foundIdentities = Object.values(result.results.twitters).filter(
             (t) => t.exists,
           ).length;
         }
 
         const total =
-          (args.addresses?.length || 0) + (args.twitters?.length || 0);
-        const found = foundAddresses + foundTwitters;
+          (args.addresses?.length || 0) + (args.identities?.length || 0);
+        const found = foundAddresses + foundIdentities;
 
-        // Format detailed output
         let details = [];
         if (result.results?.addresses) {
           for (const [addr, info] of Object.entries(result.results.addresses)) {
+            const types = Object.entries(info)
+              .filter(([k, v]) => k !== "exists" && v === true)
+              .map(([k]) => k);
             const status = info.exists
-              ? `✓ found (twitter: ${info.twitter}, farcaster: ${info.farcaster})`
+              ? `✓ found (${types.join(", ") || "no types"})`
               : "✗ not found";
             details.push(`${addr}: ${status}`);
           }
@@ -824,8 +805,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           for (const [handle, info] of Object.entries(
             result.results.twitters,
           )) {
+            const types = Object.entries(info)
+              .filter(([k, v]) => k !== "exists" && v === true)
+              .map(([k]) => k);
             const status = info.exists
-              ? `✓ found (twitter: ${info.twitter}, farcaster: ${info.farcaster})`
+              ? `✓ found (${types.join(", ") || "no types"})`
               : "✗ not found";
             details.push(`${handle}: ${status}`);
           }
@@ -846,19 +830,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (args.addresses && args.addresses.length > 0) {
           body.addresses = args.addresses;
         }
-        if (args.twitters && args.twitters.length > 0) {
-          body.twitters = args.twitters.map((t) =>
+        if (args.identities && args.identities.length > 0) {
+          body.twitters = args.identities.map((t) =>
             t.startsWith("@") ? t : `@${t}`,
           );
         }
 
         if (!body.addresses && !body.twitters) {
-          throw new Error("At least one address or twitter handle required");
+          throw new Error("At least one address or identity required");
         }
 
         const result = await postWithAuth(`${API_URL}/batch/data`, body);
 
-        // Format summary - /batch/data returns primary.twitter format
         let lines = ["Batch data retrieval complete:\n"];
 
         if (result.results?.addresses) {
@@ -1283,18 +1266,18 @@ Set one of these environment variables and restart:
 ${"─".repeat(60)}
 `
                 : ""
-            }Bluepages API - Crypto Address ↔ Twitter/X Lookup Service
+            }Bluepages API - Crypto Address ↔ Identity Lookup Service
 
-Bluepages maintains a database of over 800,000 verified connections between
-Ethereum addresses and Twitter/X handles, along with Farcaster usernames and
-display names.
+Bluepages maintains a database of over 800,000 connections between
+Ethereum addresses and social identities (Twitter, Farcaster, GitHub, Discord,
+email, Telegram, Instagram, Reddit, LinkedIn, and more).
 
 Authentication Mode: ${AUTH_MODE === "api-key" ? "API Key" : AUTH_MODE === "x402" ? "x402 Payments (USDC on Base)" : "Not configured"}
 ${AUTH_MODE === "api-key" ? "Use check_credits tool to see remaining balance" : ""}
 ${AUTH_MODE === "x402" ? `Wallet: ${wallet?.address || "Not configured"}` : ""}
 
 Usage Tips:
-1. Use check_address or check_twitter first (cheap) to see if data exists
+1. Use check_address or check_identity first (cheap) to see if data exists
 2. Only call get_data_* when check returns found=true
 3. Use batch_* endpoints for multiple lookups (more efficient)
 4. Use batch_*_streaming for large lists (100+ items) to see progress
@@ -1323,8 +1306,8 @@ Payment Methods:
 2. x402 (USDC on Base) - Pay per request
 
 Single Operations:
-- check_address / check_twitter: 1 credit ($0.001)
-- get_data_for_address / get_data_for_twitter: 50 credits ($0.05) - only if found
+- check_address / check_identity: 1 credit ($0.001)
+- get_data_for_address / get_data_for_identity: 50 credits ($0.05) - only if found
 
 Batch Operations (up to 50 items per batch):
 - batch_check: 40 credits ($0.04) per batch
@@ -1444,13 +1427,13 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
         ],
       },
       {
-        name: "find_crypto_twitter",
+        name: "find_crypto_identity",
         description:
-          "Find the Ethereum address for a Twitter/X crypto personality",
+          "Find the Ethereum address for a social identity (Twitter handle, Farcaster, email, etc.)",
         arguments: [
           {
-            name: "twitter_handle",
-            description: "Twitter/X handle to look up",
+            name: "identity",
+            description: "Identity to look up (Twitter handle, email, Farcaster username, etc.)",
             required: true,
           },
         ],
@@ -1497,19 +1480,19 @@ For each address:
         ],
       };
 
-    case "find_crypto_twitter":
+    case "find_crypto_identity":
       return {
-        description: "Find crypto address for Twitter personality",
+        description: "Find crypto address for a social identity",
         messages: [
           {
             role: "user",
             content: {
               type: "text",
-              text: `Please find the Ethereum address associated with the Twitter/X handle: ${args?.twitter_handle || "unknown"}
+              text: `Please find the Ethereum address associated with the identity: ${args?.identity || "unknown"}
 
-1. First use check_twitter to verify the handle exists in the database
-2. If found, use get_data_for_twitter to get the full details
-3. Report any associated addresses, display name, and Farcaster username`,
+1. First use check_identity to verify the identity exists in the database
+2. If found, use get_data_for_identity to get the full details
+3. Report any associated addresses and all linked identities`,
             },
           },
         ],
@@ -1565,7 +1548,7 @@ async function main() {
   }
   console.error("");
   console.error("  Features:");
-  console.error("    ✓ Tools for address/Twitter lookups");
+  console.error("    ✓ Tools for address/identity lookups");
   console.error("    ✓ Batch operations with streaming progress");
   console.error("    ✓ Low credit notifications");
   console.error("    ✓ Customizable alert thresholds");
