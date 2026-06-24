@@ -465,14 +465,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     {
       name: "check_address",
       description:
-        "Check if an Ethereum address exists in the Bluepages database. Returns whether data is available. Fast and cheap - use this first before fetching full data. Cost: 1 credit ($0.001 USD).",
+        "Check if a cryptocurrency address exists in the Bluepages database (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP). Returns whether data is available. Fast and cheap - use this first before fetching full data. Cost: 1 credit ($0.001 USD).",
       inputSchema: {
         type: "object",
         properties: {
           address: {
             type: "string",
-            description: "Ethereum address to check (0x format, 42 characters)",
-            pattern: "^0x[a-fA-F0-9]{40}$",
+            description: "Cryptocurrency address to check (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
           },
         },
         required: ["address"],
@@ -496,14 +495,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     {
       name: "get_data_for_address",
       description:
-        "Get Twitter/Farcaster for a SINGLE address. For MULTIPLE addresses, use batch_get_data instead (faster and cheaper). Cost: 50 credits when data found, free if not found.",
+        "Get identity data for a SINGLE address. For MULTIPLE addresses, use batch_get_data instead (faster and cheaper). Cost: 50 credits when data found, free if not found.",
       inputSchema: {
         type: "object",
         properties: {
           address: {
             type: "string",
-            description: "Ethereum address (0x format, 42 characters)",
-            pattern: "^0x[a-fA-F0-9]{40}$",
+            description: "Cryptocurrency address (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
           },
         },
         required: ["address"],
@@ -535,7 +533,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             type: "array",
             items: { type: "string" },
             description:
-              "Array of Ethereum addresses to check (max 50 total with identities)",
+              "Array of cryptocurrency addresses to check (max 50 total with identities). Supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP.",
           },
           identities: {
             type: "array",
@@ -556,7 +554,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           addresses: {
             type: "array",
             items: { type: "string" },
-            description: "Array of Ethereum addresses to get data for",
+            description: "Array of cryptocurrency addresses to get data for (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
           },
           identities: {
             type: "array",
@@ -577,7 +575,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             type: "array",
             items: { type: "string" },
             description:
-              "Array of Ethereum addresses to check (any size, processed in batches of 50)",
+              "Array of cryptocurrency addresses to check (any size, processed in batches of 50). Supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP.",
           },
         },
         required: ["addresses"],
@@ -594,7 +592,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             type: "array",
             items: { type: "string" },
             description:
-              "Array of Ethereum addresses to get data for (any size, processed in batches of 50)",
+              "Array of cryptocurrency addresses to get data for (any size, processed in batches of 50). Supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP.",
           },
         },
         required: ["addresses"],
@@ -684,7 +682,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `  Get a key at https://bluepages.fyi/api-keys.html\n` +
             `  20% cheaper, 2x rate limits\n\n` +
             `Option 2: PRIVATE_KEY\n` +
-            `  Ethereum private key for x402 payments (USDC on Base)\n` +
+            `  Private key for x402 payments (USDC on Base)\n` +
             `  No API key needed, pay per request`,
         },
       ],
@@ -1260,7 +1258,7 @@ Set one of these environment variables and restart:
     20% cheaper, 2x rate limits
 
   Option 2: PRIVATE_KEY
-    Ethereum private key for x402 payments (USDC on Base)
+    Private key for x402 payments (USDC on Base)
     No API key needed, pay per request
 
 ${"─".repeat(60)}
@@ -1269,7 +1267,8 @@ ${"─".repeat(60)}
             }Bluepages API - Crypto Address ↔ Identity Lookup Service
 
 Bluepages maintains a database of over 800,000 connections between
-Ethereum addresses and social identities (Twitter, Farcaster, GitHub, Discord,
+cryptocurrency addresses (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)
+and social identities (Twitter, Farcaster, GitHub, Discord,
 email, Telegram, Instagram, Reddit, LinkedIn, and more).
 
 Authentication Mode: ${AUTH_MODE === "api-key" ? "API Key" : AUTH_MODE === "x402" ? "x402 Payments (USDC on Base)" : "Not configured"}
@@ -1417,11 +1416,11 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
       {
         name: "analyze_addresses",
         description:
-          "Analyze a list of Ethereum addresses to find their Twitter/social identities",
+          "Analyze a list of cryptocurrency addresses to find their social identities",
         arguments: [
           {
             name: "addresses",
-            description: "Comma-separated list of Ethereum addresses",
+            description: "Comma-separated list of cryptocurrency addresses (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
             required: true,
           },
         ],
@@ -1429,7 +1428,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
       {
         name: "find_crypto_identity",
         description:
-          "Find the Ethereum address for a social identity (Twitter handle, Farcaster, email, etc.)",
+          "Find the cryptocurrency address for a social identity (Twitter handle, Farcaster, email, etc.)",
         arguments: [
           {
             name: "identity",
@@ -1446,7 +1445,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
           {
             name: "addresses",
             description:
-              "Comma-separated list of Ethereum addresses (any size)",
+              "Comma-separated list of cryptocurrency addresses (any size, supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
             required: true,
           },
         ],
@@ -1461,13 +1460,13 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
   switch (name) {
     case "analyze_addresses":
       return {
-        description: "Analyze Ethereum addresses for social identities",
+        description: "Analyze cryptocurrency addresses for social identities",
         messages: [
           {
             role: "user",
             content: {
               type: "text",
-              text: `Please analyze these Ethereum addresses and find any associated Twitter/social identities:
+              text: `Please analyze these cryptocurrency addresses and find any associated social identities:
 
 ${args?.addresses || "No addresses provided"}
 
@@ -1488,7 +1487,7 @@ For each address:
             role: "user",
             content: {
               type: "text",
-              text: `Please find the Ethereum address associated with the identity: ${args?.identity || "unknown"}
+              text: `Please find the cryptocurrency address associated with the identity: ${args?.identity || "unknown"}
 
 1. First use check_identity to verify the identity exists in the database
 2. If found, use get_data_for_identity to get the full details
@@ -1506,7 +1505,7 @@ For each address:
             role: "user",
             content: {
               type: "text",
-              text: `Please analyze this large list of Ethereum addresses with streaming progress:
+              text: `Please analyze this large list of cryptocurrency addresses with streaming progress:
 
 ${args?.addresses || "No addresses provided"}
 
