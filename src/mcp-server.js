@@ -375,7 +375,52 @@ function formatResult(result, query) {
     output.push(`\nSources: ${result.sources.join(", ")}`);
   }
 
+  if (result.twitterSearch?.available) {
+    output.push(
+      `\nTip: Use search_tweets to find Twitter/X posts mentioning this address ($0.05)`,
+    );
+  }
+
   return output.join("\n") || JSON.stringify(result, null, 2);
+}
+
+function formatTweetResults(result, address) {
+  const tweets = result.tweets;
+
+  if (!tweets || tweets.count === 0 || !tweets.results?.length) {
+    return `No tweets found mentioning ${address}`;
+  }
+
+  const output = [`Found ${tweets.count} tweet(s) mentioning ${address}:\n`];
+
+  for (const t of tweets.results) {
+    const date = t.created_at
+      ? new Date(t.created_at).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : "unknown date";
+    output.push(`@${t.username || "unknown"} (${date})`);
+    if (t.text) {
+      output.push(`  ${t.text.replace(/\n/g, "\n  ")}`);
+    }
+
+    const stats = [];
+    if (t.reply_count) stats.push(`${t.reply_count} replies`);
+    if (t.retweet_count) stats.push(`${t.retweet_count} reposts`);
+    if (t.like_count) stats.push(`${t.like_count} likes`);
+    if (t.view_count) stats.push(`${t.view_count} views`);
+    if (stats.length > 0) {
+      output.push(`  [${stats.join(", ")}]`);
+    }
+    if (t.url) {
+      output.push(`  ${t.url}`);
+    }
+    output.push("");
+  }
+
+  return output.join("\n");
 }
 
 /**
@@ -626,6 +671,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         required: ["addresses"],
       },
     },
+    {
+      name: "search_tweets",
+      description:
+        "Search Twitter/X for tweets mentioning a cryptocurrency address. Returns recent tweets that reference the address. Useful for finding on-chain activity discussions, scam reports, or community mentions. Cost: 50 credits ($0.05) — always charged even if no tweets are found.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          address: {
+            type: "string",
+            description:
+              "Cryptocurrency address to search for on Twitter/X (supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+          },
+        },
+        required: ["address"],
+      },
+    },
   ];
 
   // Add credit check tool only if using API key
@@ -775,6 +836,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: formatResult(result, args.identity),
+            },
+          ],
+        };
+      }
+
+      case "search_tweets": {
+        const result = await getWithAuth(
+          `${API_URL}/search/tweets?address=${encodeURIComponent(args.address)}`,
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatTweetResults(result, args.address),
             },
           ],
         };
@@ -1352,6 +1427,7 @@ Payment Methods:
 Single Operations:
 - check_address / check_identity: 1 credit ($0.001)
 - get_data_for_address / get_data_for_identity: 50 credits ($0.05) - only if found
+- search_tweets: 50 credits ($0.05) - always charged
 
 Batch Operations (up to 50 items per batch):
 - batch_check: 40 credits ($0.04) per batch
