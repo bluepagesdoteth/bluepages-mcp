@@ -6,7 +6,7 @@
  * to expose bluepages functionality to AI assistants.
  *
  * Features:
- * - Tools for address/Twitter lookups
+ * - Tools for address/identity lookups
  * - Resources for API info and pricing
  * - Prompts for common workflows
  * - Streaming for batch operations
@@ -311,6 +311,16 @@ function formatResult(result, query) {
         }
       }
 
+      if (match.labels && match.labels.length > 0) {
+        output.push("  Labels:");
+        for (const label of match.labels) {
+          let line = `    ${label.type}: ${label.name}`;
+          if (label.detail) line += ` (${label.detail})`;
+          line += ` [${label.source}]`;
+          output.push(line);
+        }
+      }
+
       if (match.cluster) {
         output.push(
           `  Cluster: ${match.cluster.id} (${match.cluster.totalAddresses} addresses)`,
@@ -327,23 +337,20 @@ function formatResult(result, query) {
     output.push(`Address: ${result.address}`);
   }
 
-  // New format: identities array
   if (result.identities && result.identities.length > 0) {
-    const twitter = result.identities.find((i) => i.type === "twitter");
-    const farcaster = result.identities.find((i) => i.type === "farcaster");
-    const email = result.identities.find((i) => i.type === "email");
-
-    if (twitter) output.push(`Twitter: ${twitter.value} (${twitter.source})`);
-    if (farcaster)
-      output.push(`Farcaster: ${farcaster.value} (${farcaster.source})`);
-    if (email) output.push(`Email: ${email.value} (${email.source})`);
-
-    // Show all identities if there are more
-    const otherIdentities = result.identities.filter(
-      (i) => !["twitter", "farcaster", "email"].includes(i.type),
-    );
-    for (const identity of otherIdentities) {
+    for (const identity of result.identities) {
       output.push(`${identity.type}: ${identity.value} (${identity.source})`);
+    }
+  }
+
+  if (result.labels && result.labels.length > 0) {
+    output.push("");
+    output.push("Labels:");
+    for (const label of result.labels) {
+      let line = `  ${label.type}: ${label.name}`;
+      if (label.detail) line += ` (${label.detail})`;
+      line += ` [${label.source}]`;
+      output.push(line);
     }
   }
 
@@ -368,7 +375,52 @@ function formatResult(result, query) {
     output.push(`\nSources: ${result.sources.join(", ")}`);
   }
 
+  if (result.twitterSearch?.available) {
+    output.push(
+      `\nTip: Use search_tweets to find Twitter/X posts mentioning this address ($0.05)`,
+    );
+  }
+
   return output.join("\n") || JSON.stringify(result, null, 2);
+}
+
+function formatTweetResults(result, address) {
+  const tweets = result.tweets;
+
+  if (!tweets || tweets.count === 0 || !tweets.results?.length) {
+    return `No tweets found mentioning ${address}`;
+  }
+
+  const output = [`Found ${tweets.count} tweet(s) mentioning ${address}:\n`];
+
+  for (const t of tweets.results) {
+    const date = t.created_at
+      ? new Date(t.created_at).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : "unknown date";
+    output.push(`@${t.username || "unknown"} (${date})`);
+    if (t.text) {
+      output.push(`  ${t.text.replace(/\n/g, "\n  ")}`);
+    }
+
+    const stats = [];
+    if (t.reply_count) stats.push(`${t.reply_count} replies`);
+    if (t.retweet_count) stats.push(`${t.retweet_count} reposts`);
+    if (t.like_count) stats.push(`${t.like_count} likes`);
+    if (t.view_count) stats.push(`${t.view_count} views`);
+    if (stats.length > 0) {
+      output.push(`  [${stats.join(", ")}]`);
+    }
+    if (t.url) {
+      output.push(`  ${t.url}`);
+    }
+    output.push("");
+  }
+
+  return output.join("\n");
 }
 
 /**
@@ -412,7 +464,7 @@ async function processBatchWithStreaming(
         let itemResult;
 
         if (isDataEndpoint) {
-          // /batch/data returns: { found, primary: { twitter, metadata }, alternates }
+          // /batch/data returns: { found, primary: { twitter, metadata }, alternates, labels }
           itemResult = {
             [type === "address" ? "address" : "twitter"]: itemKey,
             found: info.found,
@@ -420,6 +472,7 @@ async function processBatchWithStreaming(
             displayName: info.primary?.metadata?.displayName || null,
             source: info.primary?.metadata?.source || null,
             alternates: info.alternates?.length || 0,
+            labels: info.labels || [],
           };
         } else {
           // /batch/check returns: { exists, twitter: bool, farcaster: bool }
@@ -436,9 +489,15 @@ async function processBatchWithStreaming(
         // Send individual results as they come in
         const isFound = isDataEndpoint ? info.found : info.exists;
         if (isFound) {
-          const message = isDataEndpoint
-            ? `✓ Found: ${itemKey} → ${info.primary?.twitter || "no twitter"}`
-            : `✓ Found: ${itemKey} (twitter: ${info.twitter}, farcaster: ${info.farcaster})`;
+          let message;
+          if (isDataEndpoint) {
+            const parts = [];
+            if (info.primary?.twitter) parts.push(info.primary.twitter);
+            if (info.labels?.length) parts.push(`${info.labels.length} label(s)`);
+            message = `✓ Found: ${itemKey} → ${parts.join(", ") || "labels only"}`;
+          } else {
+            message = `✓ Found: ${itemKey} (twitter: ${info.twitter}, farcaster: ${info.farcaster})`;
+          }
 
           await progressCallback({
             type: "result",
@@ -479,69 +538,67 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     {
       name: "check_address",
       description:
-        "Check if an Ethereum address exists in the Bluepages database. Returns whether data is available. Fast and cheap - use this first before fetching full data. Cost: 1 credit ($0.001 USD).",
+        "Check if a cryptocurrency address exists in the Bluepages database (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP). Returns whether data is available. Fast and cheap - use this first before fetching full data. Cost: 1 credit ($0.001 USD).",
       inputSchema: {
         type: "object",
         properties: {
           address: {
             type: "string",
-            description: "Ethereum address to check (0x format, 42 characters)",
-            pattern: "^0x[a-fA-F0-9]{40}$",
+            description: "Cryptocurrency address to check (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
           },
         },
         required: ["address"],
       },
     },
     {
-      name: "check_twitter",
+      name: "check_identity",
       description:
-        "Check if a Twitter/X handle exists in the Bluepages database. Returns whether data is available. Cost: 1 credit ($0.001 USD).",
+        "Check if an identity (Twitter handle, email, Farcaster, GitHub, Discord, etc.) exists in the Bluepages database. Returns whether data is available. Cost: 1 credit ($0.001 USD).",
       inputSchema: {
         type: "object",
         properties: {
-          twitter: {
+          identity: {
             type: "string",
-            description: "Twitter/X handle (with or without @)",
+            description: "Identity to check: Twitter handle, email address, Farcaster username, GitHub username, Discord ID, etc.",
           },
         },
-        required: ["twitter"],
+        required: ["identity"],
       },
     },
     {
       name: "get_data_for_address",
       description:
-        "Get Twitter/Farcaster for a SINGLE address. For MULTIPLE addresses, use batch_get_data instead (faster and cheaper). Cost: 50 credits when data found, free if not found.",
+        "Get identity data for a SINGLE address. For MULTIPLE addresses, use batch_get_data instead (faster and cheaper). Cost: 50 credits when data found, free if not found.",
       inputSchema: {
         type: "object",
         properties: {
           address: {
             type: "string",
-            description: "Ethereum address (0x format, 42 characters)",
-            pattern: "^0x[a-fA-F0-9]{40}$",
+            description: "Cryptocurrency address (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
           },
         },
         required: ["address"],
       },
     },
     {
-      name: "get_data_for_twitter",
+      name: "get_data_for_identity",
       description:
-        "Get Ethereum addresses for a SINGLE Twitter handle. For MULTIPLE handles, use batch_get_data instead (faster and cheaper). Cost: 50 credits when data found, free if not found.",
+        "Get addresses and identity data for a SINGLE identity (Twitter handle, email, Farcaster, GitHub, Discord, etc.). For MULTIPLE identities, use batch_get_data instead (faster and cheaper). Cost: 50 credits when data found, free if not found.",
       inputSchema: {
         type: "object",
         properties: {
-          twitter: {
+          identity: {
             type: "string",
-            description: "Twitter/X handle (with or without @)",
+            description: "Identity to look up: Twitter handle, email address, Farcaster username, GitHub username, Discord ID, etc.",
           },
         },
-        required: ["twitter"],
+        required: ["identity"],
       },
     },
     {
       name: "batch_check",
       description:
-        "Check multiple addresses and/or Twitter handles at once (up to 50 total). More efficient than individual checks. Cost: 40 credits ($0.04 USD) per batch.",
+        "Check multiple addresses and/or identities at once (up to 50 total). More efficient than individual checks. Note: identity lookup currently matches Twitter handles only. Cost: 40 credits ($0.04 USD) per batch.",
       inputSchema: {
         type: "object",
         properties: {
@@ -549,13 +606,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             type: "array",
             items: { type: "string" },
             description:
-              "Array of Ethereum addresses to check (max 50 total with twitters)",
+              "Array of cryptocurrency addresses to check (max 50 total with identities). Supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP.",
           },
-          twitters: {
+          identities: {
             type: "array",
             items: { type: "string" },
             description:
-              "Array of Twitter handles to check (max 50 total with addresses)",
+              "Array of identities (Twitter handles) to check (max 50 total with addresses). Note: currently only matches Twitter handles.",
           },
         },
       },
@@ -563,19 +620,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     {
       name: "batch_get_data",
       description:
-        "RECOMMENDED for multiple addresses. Get full data for up to 50 addresses/Twitter handles at once. Much cheaper than individual get_data calls. First use batch_check to find which have data, then call this. Cost: API key users pay 40 credits per item found; x402 users pay $2.00 flat per batch.",
+        "RECOMMENDED for multiple addresses. Get full data for up to 50 addresses/identities at once. Much cheaper than individual get_data calls. First use batch_check to find which have data, then call this. Note: identity lookup currently matches Twitter handles only. Cost: API key users pay 40 credits per item found; x402 users pay $2.00 flat per batch.",
       inputSchema: {
         type: "object",
         properties: {
           addresses: {
             type: "array",
             items: { type: "string" },
-            description: "Array of Ethereum addresses to get data for",
+            description: "Array of cryptocurrency addresses to get data for (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
           },
-          twitters: {
+          identities: {
             type: "array",
             items: { type: "string" },
-            description: "Array of Twitter handles to get data for",
+            description: "Array of identities (Twitter handles) to get data for. Note: currently only matches Twitter handles.",
           },
         },
       },
@@ -591,7 +648,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             type: "array",
             items: { type: "string" },
             description:
-              "Array of Ethereum addresses to check (any size, processed in batches of 50)",
+              "Array of cryptocurrency addresses to check (any size, processed in batches of 50). Supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP.",
           },
         },
         required: ["addresses"],
@@ -608,10 +665,26 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             type: "array",
             items: { type: "string" },
             description:
-              "Array of Ethereum addresses to get data for (any size, processed in batches of 50)",
+              "Array of cryptocurrency addresses to get data for (any size, processed in batches of 50). Supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP.",
           },
         },
         required: ["addresses"],
+      },
+    },
+    {
+      name: "search_tweets",
+      description:
+        "Search Twitter/X for tweets mentioning a cryptocurrency address. Returns recent tweets that reference the address. Useful for finding on-chain activity discussions, scam reports, or community mentions. Cost: 50 credits ($0.05) — always charged even if no tweets are found.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          address: {
+            type: "string",
+            description:
+              "Cryptocurrency address to search for on Twitter/X (supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+          },
+        },
+        required: ["address"],
       },
     },
   ];
@@ -698,7 +771,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `  Get a key at https://bluepages.fyi/api-keys.html\n` +
             `  20% cheaper, 2x rate limits\n\n` +
             `Option 2: PRIVATE_KEY\n` +
-            `  Ethereum private key for x402 payments (USDC on Base)\n` +
+            `  Private key for x402 payments (USDC on Base)\n` +
             `  No API key needed, pay per request`,
         },
       ],
@@ -724,20 +797,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case "check_twitter": {
-        const twitter = args.twitter.startsWith("@")
-          ? args.twitter
-          : `@${args.twitter}`;
+      case "check_identity": {
         const result = await getWithAuth(
-          `${API_URL}/check?identity=${encodeURIComponent(twitter)}`,
+          `${API_URL}/check?identity=${encodeURIComponent(args.identity)}`,
         );
         return {
           content: [
             {
               type: "text",
               text: result.exists
-                ? `✓ ${twitter} found in database (types: ${result.types?.join(", ") || "unknown"})`
-                : `✗ ${twitter} not found in database`,
+                ? `✓ "${args.identity}" found in database (types: ${result.types?.join(", ") || "unknown"})`
+                : `✗ "${args.identity}" not found in database`,
             },
           ],
         };
@@ -757,18 +827,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case "get_data_for_twitter": {
-        const twitter = args.twitter.startsWith("@")
-          ? args.twitter
-          : `@${args.twitter}`;
+      case "get_data_for_identity": {
         const result = await getWithAuth(
-          `${API_URL}/data?identity=${encodeURIComponent(twitter)}`,
+          `${API_URL}/data?identity=${encodeURIComponent(args.identity)}`,
         );
         return {
           content: [
             {
               type: "text",
-              text: formatResult(result, twitter),
+              text: formatResult(result, args.identity),
+            },
+          ],
+        };
+      }
+
+      case "search_tweets": {
+        const result = await getWithAuth(
+          `${API_URL}/search/tweets?address=${encodeURIComponent(args.address)}`,
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatTweetResults(result, args.address),
             },
           ],
         };
@@ -779,21 +860,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (args.addresses && args.addresses.length > 0) {
           body.addresses = args.addresses;
         }
-        if (args.twitters && args.twitters.length > 0) {
-          body.twitters = args.twitters.map((t) =>
+        if (args.identities && args.identities.length > 0) {
+          body.twitters = args.identities.map((t) =>
             t.startsWith("@") ? t : `@${t}`,
           );
         }
 
         if (!body.addresses && !body.twitters) {
-          throw new Error("At least one address or twitter handle required");
+          throw new Error("At least one address or identity required");
         }
 
         const result = await postWithAuth(`${API_URL}/batch/check`, body);
 
-        // Format summary - results are objects keyed by address/twitter
         let foundAddresses = 0;
-        let foundTwitters = 0;
+        let foundIdentities = 0;
 
         if (result.results?.addresses) {
           foundAddresses = Object.values(result.results.addresses).filter(
@@ -801,21 +881,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ).length;
         }
         if (result.results?.twitters) {
-          foundTwitters = Object.values(result.results.twitters).filter(
+          foundIdentities = Object.values(result.results.twitters).filter(
             (t) => t.exists,
           ).length;
         }
 
         const total =
-          (args.addresses?.length || 0) + (args.twitters?.length || 0);
-        const found = foundAddresses + foundTwitters;
+          (args.addresses?.length || 0) + (args.identities?.length || 0);
+        const found = foundAddresses + foundIdentities;
 
-        // Format detailed output
         let details = [];
         if (result.results?.addresses) {
           for (const [addr, info] of Object.entries(result.results.addresses)) {
+            const types = Object.entries(info)
+              .filter(([k, v]) => k !== "exists" && v === true)
+              .map(([k]) => k);
             const status = info.exists
-              ? `✓ found (twitter: ${info.twitter}, farcaster: ${info.farcaster})`
+              ? `✓ found (${types.join(", ") || "no types"})`
               : "✗ not found";
             details.push(`${addr}: ${status}`);
           }
@@ -824,8 +906,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           for (const [handle, info] of Object.entries(
             result.results.twitters,
           )) {
+            const types = Object.entries(info)
+              .filter(([k, v]) => k !== "exists" && v === true)
+              .map(([k]) => k);
             const status = info.exists
-              ? `✓ found (twitter: ${info.twitter}, farcaster: ${info.farcaster})`
+              ? `✓ found (${types.join(", ") || "no types"})`
               : "✗ not found";
             details.push(`${handle}: ${status}`);
           }
@@ -846,30 +931,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (args.addresses && args.addresses.length > 0) {
           body.addresses = args.addresses;
         }
-        if (args.twitters && args.twitters.length > 0) {
-          body.twitters = args.twitters.map((t) =>
+        if (args.identities && args.identities.length > 0) {
+          body.twitters = args.identities.map((t) =>
             t.startsWith("@") ? t : `@${t}`,
           );
         }
 
         if (!body.addresses && !body.twitters) {
-          throw new Error("At least one address or twitter handle required");
+          throw new Error("At least one address or identity required");
         }
 
         const result = await postWithAuth(`${API_URL}/batch/data`, body);
 
-        // Format summary - /batch/data returns primary.twitter format
         let lines = ["Batch data retrieval complete:\n"];
 
         if (result.results?.addresses) {
           for (const [addr, info] of Object.entries(result.results.addresses)) {
-            if (info.found && info.primary) {
+            if (info.found) {
               lines.push(`${addr}`);
-              if (info.primary.twitter) {
+              if (info.primary?.twitter) {
                 const source = info.primary.metadata?.source || "unknown";
                 lines.push(`  Twitter: ${info.primary.twitter} (${source})`);
               }
-              if (info.primary.metadata?.displayName) {
+              if (info.primary?.metadata?.displayName) {
                 lines.push(
                   `  Display Name: ${info.primary.metadata.displayName}`,
                 );
@@ -878,6 +962,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 lines.push(
                   `  Alternates: ${info.alternates.length} other sources`,
                 );
+              }
+              if (info.labels && info.labels.length > 0) {
+                lines.push("  Labels:");
+                for (const label of info.labels) {
+                  let line = `    ${label.type}: ${label.name}`;
+                  if (label.detail) line += ` (${label.detail})`;
+                  line += ` [${label.source}]`;
+                  lines.push(line);
+                }
               }
               lines.push("");
             }
@@ -996,7 +1089,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           for (const item of foundItems) {
             output += `\n${item.address}\n`;
 
-            // processBatchWithStreaming now extracts twitter, displayName, source directly
             if (item.twitter) {
               output += `  Twitter: ${item.twitter}`;
               if (item.source) output += ` (${item.source})`;
@@ -1007,6 +1099,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
             if (item.alternates > 0) {
               output += `  Alternates: ${item.alternates} other sources\n`;
+            }
+            if (item.labels && item.labels.length > 0) {
+              output += "  Labels:\n";
+              for (const label of item.labels) {
+                let line = `    ${label.type}: ${label.name}`;
+                if (label.detail) line += ` (${label.detail})`;
+                line += ` [${label.source}]`;
+                output += line + "\n";
+              }
             }
           }
         }
@@ -1083,19 +1184,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
         }
 
-        // Create and sign authentication message
-        const message = `Authenticate with Bluepages API\n\nAddress: ${wallet.address}\nTimestamp: ${Date.now()}`;
+        // Step 1: Fetch a one-time nonce
+        const nonceRes = await fetch(`${API_URL}/api/nonce`);
+        if (!nonceRes.ok) {
+          throw new Error(`Failed to fetch nonce: ${nonceRes.status}`);
+        }
+        const { nonce } = await nonceRes.json();
+
+        // Step 2: Build EIP-4361 (SIWE) message
+        const domain = new URL(API_URL).host;
+        const uri = API_URL;
+        const now = new Date();
+        const expiry = new Date(now.getTime() + 5 * 60 * 1000);
+        const message = [
+          `${domain} wants you to sign in with your Ethereum account:`,
+          wallet.address,
+          "",
+          "Sign in to your Bluepages API dashboard.",
+          "",
+          `URI: ${uri}`,
+          `Version: 1`,
+          `Chain ID: 8453`,
+          `Nonce: ${nonce}`,
+          `Issued At: ${now.toISOString()}`,
+          `Expiration Time: ${expiry.toISOString()}`,
+        ].join("\n");
         const signature = await wallet.signMessage(message);
 
-        // Call auth endpoint
+        // Step 3: Authenticate
         const response = await fetch(`${API_URL}/api/auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            address: wallet.address,
-            message,
-            signature,
-          }),
+          body: JSON.stringify({ message, signature }),
         });
 
         if (!response.ok) {
@@ -1277,24 +1397,25 @@ Set one of these environment variables and restart:
     20% cheaper, 2x rate limits
 
   Option 2: PRIVATE_KEY
-    Ethereum private key for x402 payments (USDC on Base)
+    Private key for x402 payments (USDC on Base)
     No API key needed, pay per request
 
 ${"─".repeat(60)}
 `
                 : ""
-            }Bluepages API - Crypto Address ↔ Twitter/X Lookup Service
+            }Bluepages API - Crypto Address ↔ Identity Lookup Service
 
-Bluepages maintains a database of over 800,000 verified connections between
-Ethereum addresses and Twitter/X handles, along with Farcaster usernames and
-display names.
+Bluepages maintains a database of over 800,000 connections between
+cryptocurrency addresses (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)
+and social identities (Twitter, Farcaster, GitHub, Discord,
+email, Telegram, Instagram, Reddit, LinkedIn, and more).
 
 Authentication Mode: ${AUTH_MODE === "api-key" ? "API Key" : AUTH_MODE === "x402" ? "x402 Payments (USDC on Base)" : "Not configured"}
 ${AUTH_MODE === "api-key" ? "Use check_credits tool to see remaining balance" : ""}
 ${AUTH_MODE === "x402" ? `Wallet: ${wallet?.address || "Not configured"}` : ""}
 
 Usage Tips:
-1. Use check_address or check_twitter first (cheap) to see if data exists
+1. Use check_address or check_identity first (cheap) to see if data exists
 2. Only call get_data_* when check returns found=true
 3. Use batch_* endpoints for multiple lookups (more efficient)
 4. Use batch_*_streaming for large lists (100+ items) to see progress
@@ -1323,8 +1444,9 @@ Payment Methods:
 2. x402 (USDC on Base) - Pay per request
 
 Single Operations:
-- check_address / check_twitter: 1 credit ($0.001)
-- get_data_for_address / get_data_for_twitter: 50 credits ($0.05) - only if found
+- check_address / check_identity: 1 credit ($0.001)
+- get_data_for_address / get_data_for_identity: 50 credits ($0.05) - only if found
+- search_tweets: 50 credits ($0.05) - always charged
 
 Batch Operations (up to 50 items per batch):
 - batch_check: 40 credits ($0.04) per batch
@@ -1434,23 +1556,23 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
       {
         name: "analyze_addresses",
         description:
-          "Analyze a list of Ethereum addresses to find their Twitter/social identities",
+          "Analyze a list of cryptocurrency addresses to find their social identities",
         arguments: [
           {
             name: "addresses",
-            description: "Comma-separated list of Ethereum addresses",
+            description: "Comma-separated list of cryptocurrency addresses (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
             required: true,
           },
         ],
       },
       {
-        name: "find_crypto_twitter",
+        name: "find_crypto_identity",
         description:
-          "Find the Ethereum address for a Twitter/X crypto personality",
+          "Find the cryptocurrency address for a social identity (Twitter handle, Farcaster, email, etc.)",
         arguments: [
           {
-            name: "twitter_handle",
-            description: "Twitter/X handle to look up",
+            name: "identity",
+            description: "Identity to look up (Twitter handle, email, Farcaster username, etc.)",
             required: true,
           },
         ],
@@ -1463,7 +1585,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
           {
             name: "addresses",
             description:
-              "Comma-separated list of Ethereum addresses (any size)",
+              "Comma-separated list of cryptocurrency addresses (any size, supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
             required: true,
           },
         ],
@@ -1478,13 +1600,13 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
   switch (name) {
     case "analyze_addresses":
       return {
-        description: "Analyze Ethereum addresses for social identities",
+        description: "Analyze cryptocurrency addresses for social identities",
         messages: [
           {
             role: "user",
             content: {
               type: "text",
-              text: `Please analyze these Ethereum addresses and find any associated Twitter/social identities:
+              text: `Please analyze these cryptocurrency addresses and find any associated social identities:
 
 ${args?.addresses || "No addresses provided"}
 
@@ -1497,19 +1619,19 @@ For each address:
         ],
       };
 
-    case "find_crypto_twitter":
+    case "find_crypto_identity":
       return {
-        description: "Find crypto address for Twitter personality",
+        description: "Find crypto address for a social identity",
         messages: [
           {
             role: "user",
             content: {
               type: "text",
-              text: `Please find the Ethereum address associated with the Twitter/X handle: ${args?.twitter_handle || "unknown"}
+              text: `Please find the cryptocurrency address associated with the identity: ${args?.identity || "unknown"}
 
-1. First use check_twitter to verify the handle exists in the database
-2. If found, use get_data_for_twitter to get the full details
-3. Report any associated addresses, display name, and Farcaster username`,
+1. First use check_identity to verify the identity exists in the database
+2. If found, use get_data_for_identity to get the full details
+3. Report any associated addresses and all linked identities`,
             },
           },
         ],
@@ -1523,7 +1645,7 @@ For each address:
             role: "user",
             content: {
               type: "text",
-              text: `Please analyze this large list of Ethereum addresses with streaming progress:
+              text: `Please analyze this large list of cryptocurrency addresses with streaming progress:
 
 ${args?.addresses || "No addresses provided"}
 
@@ -1565,7 +1687,7 @@ async function main() {
   }
   console.error("");
   console.error("  Features:");
-  console.error("    ✓ Tools for address/Twitter lookups");
+  console.error("    ✓ Tools for address/identity lookups");
   console.error("    ✓ Batch operations with streaming progress");
   console.error("    ✓ Low credit notifications");
   console.error("    ✓ Customizable alert thresholds");
