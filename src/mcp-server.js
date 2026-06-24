@@ -1184,19 +1184,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
         }
 
-        // Create and sign authentication message
-        const message = `Authenticate with Bluepages API\n\nAddress: ${wallet.address}\nTimestamp: ${Date.now()}`;
+        // Step 1: Fetch a one-time nonce
+        const nonceRes = await fetch(`${API_URL}/api/nonce`);
+        if (!nonceRes.ok) {
+          throw new Error(`Failed to fetch nonce: ${nonceRes.status}`);
+        }
+        const { nonce } = await nonceRes.json();
+
+        // Step 2: Build EIP-4361 (SIWE) message
+        const domain = new URL(API_URL).host;
+        const uri = API_URL;
+        const now = new Date();
+        const expiry = new Date(now.getTime() + 5 * 60 * 1000);
+        const message = [
+          `${domain} wants you to sign in with your Ethereum account:`,
+          wallet.address,
+          "",
+          "Sign in to your Bluepages API dashboard.",
+          "",
+          `URI: ${uri}`,
+          `Version: 1`,
+          `Chain ID: 8453`,
+          `Nonce: ${nonce}`,
+          `Issued At: ${now.toISOString()}`,
+          `Expiration Time: ${expiry.toISOString()}`,
+        ].join("\n");
         const signature = await wallet.signMessage(message);
 
-        // Call auth endpoint
+        // Step 3: Authenticate
         const response = await fetch(`${API_URL}/api/auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            address: wallet.address,
-            message,
-            signature,
-          }),
+          body: JSON.stringify({ message, signature }),
         });
 
         if (!response.ok) {
