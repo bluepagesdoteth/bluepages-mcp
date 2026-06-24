@@ -311,6 +311,16 @@ function formatResult(result, query) {
         }
       }
 
+      if (match.labels && match.labels.length > 0) {
+        output.push("  Labels:");
+        for (const label of match.labels) {
+          let line = `    ${label.type}: ${label.name}`;
+          if (label.detail) line += ` (${label.detail})`;
+          line += ` [${label.source}]`;
+          output.push(line);
+        }
+      }
+
       if (match.cluster) {
         output.push(
           `  Cluster: ${match.cluster.id} (${match.cluster.totalAddresses} addresses)`,
@@ -330,6 +340,17 @@ function formatResult(result, query) {
   if (result.identities && result.identities.length > 0) {
     for (const identity of result.identities) {
       output.push(`${identity.type}: ${identity.value} (${identity.source})`);
+    }
+  }
+
+  if (result.labels && result.labels.length > 0) {
+    output.push("");
+    output.push("Labels:");
+    for (const label of result.labels) {
+      let line = `  ${label.type}: ${label.name}`;
+      if (label.detail) line += ` (${label.detail})`;
+      line += ` [${label.source}]`;
+      output.push(line);
     }
   }
 
@@ -398,7 +419,7 @@ async function processBatchWithStreaming(
         let itemResult;
 
         if (isDataEndpoint) {
-          // /batch/data returns: { found, primary: { twitter, metadata }, alternates }
+          // /batch/data returns: { found, primary: { twitter, metadata }, alternates, labels }
           itemResult = {
             [type === "address" ? "address" : "twitter"]: itemKey,
             found: info.found,
@@ -406,6 +427,7 @@ async function processBatchWithStreaming(
             displayName: info.primary?.metadata?.displayName || null,
             source: info.primary?.metadata?.source || null,
             alternates: info.alternates?.length || 0,
+            labels: info.labels || [],
           };
         } else {
           // /batch/check returns: { exists, twitter: bool, farcaster: bool }
@@ -422,9 +444,15 @@ async function processBatchWithStreaming(
         // Send individual results as they come in
         const isFound = isDataEndpoint ? info.found : info.exists;
         if (isFound) {
-          const message = isDataEndpoint
-            ? `✓ Found: ${itemKey} → ${info.primary?.twitter || "no twitter"}`
-            : `✓ Found: ${itemKey} (twitter: ${info.twitter}, farcaster: ${info.farcaster})`;
+          let message;
+          if (isDataEndpoint) {
+            const parts = [];
+            if (info.primary?.twitter) parts.push(info.primary.twitter);
+            if (info.labels?.length) parts.push(`${info.labels.length} label(s)`);
+            message = `✓ Found: ${itemKey} → ${parts.join(", ") || "labels only"}`;
+          } else {
+            message = `✓ Found: ${itemKey} (twitter: ${info.twitter}, farcaster: ${info.farcaster})`;
+          }
 
           await progressCallback({
             type: "result",
@@ -844,13 +872,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         if (result.results?.addresses) {
           for (const [addr, info] of Object.entries(result.results.addresses)) {
-            if (info.found && info.primary) {
+            if (info.found) {
               lines.push(`${addr}`);
-              if (info.primary.twitter) {
+              if (info.primary?.twitter) {
                 const source = info.primary.metadata?.source || "unknown";
                 lines.push(`  Twitter: ${info.primary.twitter} (${source})`);
               }
-              if (info.primary.metadata?.displayName) {
+              if (info.primary?.metadata?.displayName) {
                 lines.push(
                   `  Display Name: ${info.primary.metadata.displayName}`,
                 );
@@ -859,6 +887,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 lines.push(
                   `  Alternates: ${info.alternates.length} other sources`,
                 );
+              }
+              if (info.labels && info.labels.length > 0) {
+                lines.push("  Labels:");
+                for (const label of info.labels) {
+                  let line = `    ${label.type}: ${label.name}`;
+                  if (label.detail) line += ` (${label.detail})`;
+                  line += ` [${label.source}]`;
+                  lines.push(line);
+                }
               }
               lines.push("");
             }
@@ -977,7 +1014,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           for (const item of foundItems) {
             output += `\n${item.address}\n`;
 
-            // processBatchWithStreaming now extracts twitter, displayName, source directly
             if (item.twitter) {
               output += `  Twitter: ${item.twitter}`;
               if (item.source) output += ` (${item.source})`;
@@ -988,6 +1024,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
             if (item.alternates > 0) {
               output += `  Alternates: ${item.alternates} other sources\n`;
+            }
+            if (item.labels && item.labels.length > 0) {
+              output += "  Labels:\n";
+              for (const label of item.labels) {
+                let line = `    ${label.type}: ${label.name}`;
+                if (label.detail) line += ` (${label.detail})`;
+                line += ` [${label.source}]`;
+                output += line + "\n";
+              }
             }
           }
         }
