@@ -286,6 +286,15 @@ async function postWithAuth(url, body) {
 }
 
 /**
+ * One-line summary of a sanctions entry: source, entity, programs, status
+ */
+function describeSanction(s) {
+  const programs = s.programs?.length ? ` [${s.programs.join(", ")}]` : "";
+  const status = s.active ? "active" : `removed ${s.removedAt}`;
+  return `${s.source}: ${s.entity}${programs} — ${status} (added ${s.addedAt})`;
+}
+
+/**
  * Format a result for human-readable output
  */
 function formatResult(result, query) {
@@ -321,6 +330,13 @@ function formatResult(result, query) {
         }
       }
 
+      if (match.sanctions && match.sanctions.length > 0) {
+        output.push("  ⚠ Sanctions:");
+        for (const s of match.sanctions) {
+          output.push(`    ${describeSanction(s)}`);
+        }
+      }
+
       if (match.cluster) {
         output.push(
           `  Cluster: ${match.cluster.id} (${match.cluster.totalAddresses} addresses)`,
@@ -351,6 +367,14 @@ function formatResult(result, query) {
       if (label.detail) line += ` (${label.detail})`;
       line += ` [${label.source}]`;
       output.push(line);
+    }
+  }
+
+  if (result.sanctions && result.sanctions.length > 0) {
+    output.push("");
+    output.push("⚠ Sanctions:");
+    for (const s of result.sanctions) {
+      output.push(`  ${describeSanction(s)}`);
     }
   }
 
@@ -420,7 +444,7 @@ function formatTweetResults(result, address) {
 
 /**
  * Process batch items with streaming progress updates
- * Handles both /batch/check ({ exists, types[] }) and /batch/data ({ found, identities[], labels[] }) formats
+ * Handles both /batch/check ({ exists, types[] }) and /batch/data ({ found, identities[], labels[], sanctions[], cluster }) formats
  */
 async function processBatchWithStreaming(
   items,
@@ -465,6 +489,8 @@ async function processBatchWithStreaming(
             found: info.found === true,
             identities: info.identities || [],
             labels: info.labels || [],
+            sanctions: info.sanctions || [],
+            cluster: info.cluster || null,
           };
         } else if (isDataEndpoint) {
           // /batch/data identity entry: { found, totalMatches, results[] }
@@ -490,16 +516,17 @@ async function processBatchWithStreaming(
           let message;
           if (isDataEndpoint) {
             const parts = [];
-            const twitter = (info.identities || []).find(
-              (i) => i.type === "twitter",
-            );
-            if (twitter) parts.push(twitter.value);
-            else if (info.identities?.length)
-              parts.push(`${info.identities.length} identity(ies)`);
-            else if (info.totalMatches)
+            const ids = info.identities || [];
+            if (ids.length) {
+              const more = ids.length > 1 ? ` +${ids.length - 1} more` : "";
+              parts.push(`${ids[0].type}:${ids[0].value}${more}`);
+            } else if (info.totalMatches) {
               parts.push(`${info.totalMatches} match(es)`);
+            }
             if (info.labels?.length)
               parts.push(`${info.labels.length} label(s)`);
+            if (info.sanctions?.length)
+              parts.push(`⚠ ${info.sanctions.length} sanction(s)`);
             message = `✓ Found: ${itemKey} → ${parts.join(", ") || "labels only"}`;
           } else {
             message = `✓ Found: ${itemKey} (${(info.types || []).join(", ") || "no types"})`;
@@ -970,6 +997,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 lines.push(line);
               }
             }
+            if (info.sanctions && info.sanctions.length > 0) {
+              lines.push("  ⚠ Sanctions:");
+              for (const s of info.sanctions) {
+                lines.push(`    ${describeSanction(s)}`);
+              }
+            }
             if (info.cluster) {
               lines.push(
                 `  Cluster: ${info.cluster.id} (${info.cluster.totalAddresses} addresses)`,
@@ -986,8 +1019,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             if (!info.found) continue;
             lines.push(`${handle}: ${info.totalMatches} match(es)`);
             for (const match of info.results || []) {
+              const flag = match.sanctions?.some((s) => s.active)
+                ? " ⚠ SANCTIONED"
+                : "";
               lines.push(
-                `  ${match.address} (${match.matchType} = ${match.matchedValue})`,
+                `  ${match.address} (${match.matchType} = ${match.matchedValue})${flag}`,
               );
             }
             lines.push("");
@@ -1101,6 +1137,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 line += ` [${label.source}]`;
                 output += line + "\n";
               }
+            }
+            if (item.sanctions && item.sanctions.length > 0) {
+              output += "  ⚠ Sanctions:\n";
+              for (const s of item.sanctions) {
+                output += `    ${describeSanction(s)}\n`;
+              }
+            }
+            if (item.cluster) {
+              output += `  Cluster: ${item.cluster.id} (${item.cluster.totalAddresses} addresses)\n`;
             }
           }
         }
