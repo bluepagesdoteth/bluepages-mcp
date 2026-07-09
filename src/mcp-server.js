@@ -425,7 +425,7 @@ function formatTweetResults(result, address) {
 
 /**
  * Process batch items with streaming progress updates
- * Handles both /batch/check (exists, twitter bool) and /batch/data (found, primary obj) formats
+ * Handles both /batch/check ({ exists, types[] }) and /batch/data ({ found, identities[], labels[] }) formats
  */
 async function processBatchWithStreaming(
   items,
@@ -453,50 +453,61 @@ async function processBatchWithStreaming(
 
     // Make the API call
     const body =
-      type === "address" ? { addresses: batch } : { twitters: batch };
+      type === "address" ? { addresses: batch } : { identities: batch };
     const result = await postWithAuth(`${API_URL}${endpoint}`, body);
 
-    // Extract results - response is an object keyed by address/twitter
-    const key = type === "address" ? "addresses" : "twitters";
+    // Extract results - response is an object keyed by address/identity
+    const key = type === "address" ? "addresses" : "identities";
     if (result.results?.[key]) {
       // Convert object format to array format
       for (const [itemKey, info] of Object.entries(result.results[key])) {
         let itemResult;
 
-        if (isDataEndpoint) {
-          // /batch/data returns: { found, primary: { twitter, metadata }, alternates, labels }
+        if (isDataEndpoint && type === "address") {
+          // /batch/data address entry: { found, identities[], labels[], sanctions[], cluster, sources[] }
           itemResult = {
-            [type === "address" ? "address" : "twitter"]: itemKey,
-            found: info.found,
-            twitter: info.primary?.twitter || null,
-            displayName: info.primary?.metadata?.displayName || null,
-            source: info.primary?.metadata?.source || null,
-            alternates: info.alternates?.length || 0,
+            address: itemKey,
+            found: info.found === true,
+            identities: info.identities || [],
             labels: info.labels || [],
           };
-        } else {
-          // /batch/check returns: { exists, twitter: bool, farcaster: bool }
+        } else if (isDataEndpoint) {
+          // /batch/data identity entry: { found, totalMatches, results[] }
           itemResult = {
-            [type === "address" ? "address" : "twitter"]: itemKey,
-            found: info.exists,
-            twitter: info.twitter,
-            farcaster: info.farcaster,
+            identity: itemKey,
+            found: info.found === true,
+            totalMatches: info.totalMatches || 0,
+            matches: info.results || [],
+          };
+        } else {
+          // /batch/check entry: { exists, types[] } or { error }
+          itemResult = {
+            [type === "address" ? "address" : "identity"]: itemKey,
+            found: info.exists === true,
+            types: info.types || [],
           };
         }
 
         results.push(itemResult);
 
         // Send individual results as they come in
-        const isFound = isDataEndpoint ? info.found : info.exists;
-        if (isFound) {
+        if (itemResult.found) {
           let message;
           if (isDataEndpoint) {
             const parts = [];
-            if (info.primary?.twitter) parts.push(info.primary.twitter);
-            if (info.labels?.length) parts.push(`${info.labels.length} label(s)`);
+            const twitter = (info.identities || []).find(
+              (i) => i.type === "twitter",
+            );
+            if (twitter) parts.push(twitter.value);
+            else if (info.identities?.length)
+              parts.push(`${info.identities.length} identity(ies)`);
+            else if (info.totalMatches)
+              parts.push(`${info.totalMatches} match(es)`);
+            if (info.labels?.length)
+              parts.push(`${info.labels.length} label(s)`);
             message = `✓ Found: ${itemKey} → ${parts.join(", ") || "labels only"}`;
           } else {
-            message = `✓ Found: ${itemKey} (twitter: ${info.twitter}, farcaster: ${info.farcaster})`;
+            message = `✓ Found: ${itemKey} (${(info.types || []).join(", ") || "no types"})`;
           }
 
           await progressCallback({
@@ -544,7 +555,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         properties: {
           address: {
             type: "string",
-            description: "Cryptocurrency address to check (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+            description:
+              "Cryptocurrency address to check (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
           },
         },
         required: ["address"],
@@ -559,7 +571,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         properties: {
           identity: {
             type: "string",
-            description: "Identity to check: Twitter handle, email address, Farcaster username, GitHub username, Discord ID, etc.",
+            description:
+              "Identity to check: Twitter handle, email address, Farcaster username, GitHub username, Discord ID, etc.",
           },
         },
         required: ["identity"],
@@ -574,7 +587,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         properties: {
           address: {
             type: "string",
-            description: "Cryptocurrency address (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+            description:
+              "Cryptocurrency address (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
           },
         },
         required: ["address"],
@@ -589,7 +603,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         properties: {
           identity: {
             type: "string",
-            description: "Identity to look up: Twitter handle, email address, Farcaster username, GitHub username, Discord ID, etc.",
+            description:
+              "Identity to look up: Twitter handle, email address, Farcaster username, GitHub username, Discord ID, etc.",
           },
         },
         required: ["identity"],
@@ -598,7 +613,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     {
       name: "batch_check",
       description:
-        "Check multiple addresses and/or identities at once (up to 50 total). More efficient than individual checks. Note: identity lookup currently matches Twitter handles only. Cost: 40 credits ($0.04 USD) per batch.",
+        "Check multiple addresses and/or identities at once (up to 50 total). More efficient than individual checks. Cost: 40 credits ($0.04 USD) per batch.",
       inputSchema: {
         type: "object",
         properties: {
@@ -612,7 +627,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             type: "array",
             items: { type: "string" },
             description:
-              "Array of identities (Twitter handles) to check (max 50 total with addresses). Note: currently only matches Twitter handles.",
+              "Array of identities to check (max 50 total with addresses): Twitter handles, emails, Farcaster/GitHub usernames, Discord IDs, etc.",
           },
         },
       },
@@ -620,19 +635,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     {
       name: "batch_get_data",
       description:
-        "RECOMMENDED for multiple addresses. Get full data for up to 50 addresses/identities at once. Much cheaper than individual get_data calls. First use batch_check to find which have data, then call this. Note: identity lookup currently matches Twitter handles only. Cost: API key users pay 40 credits per item found; x402 users pay $2.00 flat per batch.",
+        "RECOMMENDED for multiple addresses. Get full data for up to 50 addresses/identities at once. Much cheaper than individual get_data calls. First use batch_check to find which have data, then call this. Cost: API key users pay 40 credits per item found; x402 users pay $2.00 flat per batch.",
       inputSchema: {
         type: "object",
         properties: {
           addresses: {
             type: "array",
             items: { type: "string" },
-            description: "Array of cryptocurrency addresses to get data for (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+            description:
+              "Array of cryptocurrency addresses to get data for (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
           },
           identities: {
             type: "array",
             items: { type: "string" },
-            description: "Array of identities (Twitter handles) to get data for. Note: currently only matches Twitter handles.",
+            description:
+              "Array of identities to get data for: Twitter handles, emails, Farcaster/GitHub usernames, Discord IDs, etc.",
           },
         },
       },
@@ -861,12 +878,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           body.addresses = args.addresses;
         }
         if (args.identities && args.identities.length > 0) {
-          body.twitters = args.identities.map((t) =>
-            t.startsWith("@") ? t : `@${t}`,
-          );
+          body.identities = args.identities;
         }
 
-        if (!body.addresses && !body.twitters) {
+        if (!body.addresses && !body.identities) {
           throw new Error("At least one address or identity required");
         }
 
@@ -880,9 +895,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             (a) => a.exists,
           ).length;
         }
-        if (result.results?.twitters) {
-          foundIdentities = Object.values(result.results.twitters).filter(
-            (t) => t.exists,
+        if (result.results?.identities) {
+          foundIdentities = Object.values(result.results.identities).filter(
+            (i) => i.exists,
           ).length;
         }
 
@@ -890,30 +905,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           (args.addresses?.length || 0) + (args.identities?.length || 0);
         const found = foundAddresses + foundIdentities;
 
+        // Entry is { exists, types[] } or { error } for invalid input
+        const describeCheckEntry = (info) => {
+          if (info.error) return `⚠ ${info.error}`;
+          return info.exists
+            ? `✓ found (${info.types?.join(", ") || "no types"})`
+            : "✗ not found";
+        };
+
         let details = [];
-        if (result.results?.addresses) {
-          for (const [addr, info] of Object.entries(result.results.addresses)) {
-            const types = Object.entries(info)
-              .filter(([k, v]) => k !== "exists" && v === true)
-              .map(([k]) => k);
-            const status = info.exists
-              ? `✓ found (${types.join(", ") || "no types"})`
-              : "✗ not found";
-            details.push(`${addr}: ${status}`);
-          }
+        for (const [addr, info] of Object.entries(
+          result.results?.addresses || {},
+        )) {
+          details.push(`${addr}: ${describeCheckEntry(info)}`);
         }
-        if (result.results?.twitters) {
-          for (const [handle, info] of Object.entries(
-            result.results.twitters,
-          )) {
-            const types = Object.entries(info)
-              .filter(([k, v]) => k !== "exists" && v === true)
-              .map(([k]) => k);
-            const status = info.exists
-              ? `✓ found (${types.join(", ") || "no types"})`
-              : "✗ not found";
-            details.push(`${handle}: ${status}`);
-          }
+        for (const [handle, info] of Object.entries(
+          result.results?.identities || {},
+        )) {
+          details.push(`${handle}: ${describeCheckEntry(info)}`);
         }
 
         return {
@@ -932,12 +941,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           body.addresses = args.addresses;
         }
         if (args.identities && args.identities.length > 0) {
-          body.twitters = args.identities.map((t) =>
-            t.startsWith("@") ? t : `@${t}`,
-          );
+          body.identities = args.identities;
         }
 
-        if (!body.addresses && !body.twitters) {
+        if (!body.addresses && !body.identities) {
           throw new Error("At least one address or identity required");
         }
 
@@ -947,49 +954,48 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         if (result.results?.addresses) {
           for (const [addr, info] of Object.entries(result.results.addresses)) {
-            if (info.found) {
-              lines.push(`${addr}`);
-              if (info.primary?.twitter) {
-                const source = info.primary.metadata?.source || "unknown";
-                lines.push(`  Twitter: ${info.primary.twitter} (${source})`);
-              }
-              if (info.primary?.metadata?.displayName) {
-                lines.push(
-                  `  Display Name: ${info.primary.metadata.displayName}`,
-                );
-              }
-              if (info.alternates && info.alternates.length > 0) {
-                lines.push(
-                  `  Alternates: ${info.alternates.length} other sources`,
-                );
-              }
-              if (info.labels && info.labels.length > 0) {
-                lines.push("  Labels:");
-                for (const label of info.labels) {
-                  let line = `    ${label.type}: ${label.name}`;
-                  if (label.detail) line += ` (${label.detail})`;
-                  line += ` [${label.source}]`;
-                  lines.push(line);
-                }
-              }
+            if (info.error) {
+              lines.push(`${addr}: ⚠ ${info.error}`);
               lines.push("");
+              continue;
             }
+            if (!info.found) continue;
+            lines.push(`${addr}`);
+            for (const identity of info.identities || []) {
+              lines.push(
+                `  ${identity.type}: ${identity.value} (${identity.source})`,
+              );
+            }
+            if (info.labels && info.labels.length > 0) {
+              lines.push("  Labels:");
+              for (const label of info.labels) {
+                let line = `    ${label.type}: ${label.name}`;
+                if (label.detail) line += ` (${label.detail})`;
+                line += ` [${label.source}]`;
+                lines.push(line);
+              }
+            }
+            if (info.cluster) {
+              lines.push(
+                `  Cluster: ${info.cluster.id} (${info.cluster.totalAddresses} addresses)`,
+              );
+            }
+            lines.push("");
           }
         }
 
-        if (result.results?.twitters) {
+        if (result.results?.identities) {
           for (const [handle, info] of Object.entries(
-            result.results.twitters,
+            result.results.identities,
           )) {
-            if (info.found && info.primary) {
-              lines.push(`${handle} → ${info.primary.address}`);
-              if (info.primary.metadata?.displayName) {
-                lines.push(
-                  `  Display Name: ${info.primary.metadata.displayName}`,
-                );
-              }
-              lines.push("");
+            if (!info.found) continue;
+            lines.push(`${handle}: ${info.totalMatches} match(es)`);
+            for (const match of info.results || []) {
+              lines.push(
+                `  ${match.address} (${match.matchType} = ${match.matchedValue})`,
+              );
             }
+            lines.push("");
           }
         }
 
@@ -1089,16 +1095,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           for (const item of foundItems) {
             output += `\n${item.address}\n`;
 
-            if (item.twitter) {
-              output += `  Twitter: ${item.twitter}`;
-              if (item.source) output += ` (${item.source})`;
-              output += "\n";
-            }
-            if (item.displayName) {
-              output += `  Display Name: ${item.displayName}\n`;
-            }
-            if (item.alternates > 0) {
-              output += `  Alternates: ${item.alternates} other sources\n`;
+            for (const identity of item.identities || []) {
+              output += `  ${identity.type}: ${identity.value} (${identity.source})\n`;
             }
             if (item.labels && item.labels.length > 0) {
               output += "  Labels:\n";
@@ -1560,7 +1558,8 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
         arguments: [
           {
             name: "addresses",
-            description: "Comma-separated list of cryptocurrency addresses (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+            description:
+              "Comma-separated list of cryptocurrency addresses (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
             required: true,
           },
         ],
@@ -1572,7 +1571,8 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
         arguments: [
           {
             name: "identity",
-            description: "Identity to look up (Twitter handle, email, Farcaster username, etc.)",
+            description:
+              "Identity to look up (Twitter handle, email, Farcaster username, etc.)",
             required: true,
           },
         ],
