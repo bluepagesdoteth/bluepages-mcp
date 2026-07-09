@@ -370,11 +370,6 @@ function formatResult(result, query) {
     }
   }
 
-  // Sources summary
-  if (result.sources && result.sources.length > 0) {
-    output.push(`\nSources: ${result.sources.join(", ")}`);
-  }
-
   if (result.twitterSearch?.available) {
     output.push(
       `\nTip: Use search_tweets to find Twitter/X posts mentioning this address ($0.05)`,
@@ -464,7 +459,7 @@ async function processBatchWithStreaming(
         let itemResult;
 
         if (isDataEndpoint && type === "address") {
-          // /batch/data address entry: { found, identities[], labels[], sanctions[], cluster, sources[] }
+          // /batch/data address entry: { found, identities[], labels[], sanctions[], cluster }
           itemResult = {
             address: itemKey,
             found: info.found === true,
