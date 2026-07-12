@@ -72,8 +72,10 @@ CI (`.github/workflows/test.yml`) runs the hermetic suite on GitHub-hosted runne
 
 ```bash
 gh extension install basecamp/gh-signoff   # once
-pnpm test && gh signoff                    # full suite incl. contract tests, then sign off
+pnpm run signoff                           # strict suite, then gh signoff
 ```
+
+`pnpm run signoff` sets `CONTRACT_REQUIRED=1`: if `bluepages-fyi` is not checked out as a sibling (schemas unavailable), the run **fails** instead of skipping the contract tests — a signoff always attests a full run. Plain `pnpm test` keeps the graceful skip for consumers outside the workspace.
 
 Make `signoff` a required status check on `main` (repo settings → Branches, one-time) so merges require a local run. A husky pre-push hook also runs `pnpm test` as a safety net.
 

@@ -2,9 +2,9 @@ name: Tests
 
 # Hermetic suite only: the contract tests (fixtures vs bluepages-fyi Zod
 # schemas) self-skip on hosted runners since the private bluepages-fyi repo
-# is not checked out here. They are enforced locally instead: run `pnpm test`
-# on a dev machine (where bluepages-fyi is a sibling) and post the result
-# with `gh signoff` — see README "Development".
+# is not checked out here. They are enforced locally instead: `pnpm run
+# signoff` runs the suite with CONTRACT_REQUIRED=1 (missing bluepages-fyi
+# fails instead of skipping) and then posts `gh signoff` — see README.
 
 on:
   push:
