@@ -11,6 +11,7 @@
     "!src/__tests__/"
   ],
   "license": "MIT",
+  "packageManager": "pnpm@10.33.3",
   "homepage": "https://bluepages.fyi",
   "repository": "https://github.com/bluepagesdoteth/bluepages-mcp",
   "scripts": {
