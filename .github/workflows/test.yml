@@ -1,0 +1,46 @@
+name: Tests
+
+# Hermetic suite only: the contract tests (fixtures vs bluepages-fyi Zod
+# schemas) self-skip on hosted runners since the private bluepages-fyi repo
+# is not checked out here. They are enforced locally instead: run `pnpm test`
+# on a dev machine (where bluepages-fyi is a sibling) and post the result
+# with `gh signoff` — see README "Development".
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    name: Hermetic suite
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        run: pnpm run format:check
+
+      - name: Run tests
+        run: pnpm test
