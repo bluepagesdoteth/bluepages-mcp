@@ -40,6 +40,7 @@ import {
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { readFileSync } from "node:fs";
 import { ethers } from "ethers";
 import fetch from "node-fetch";
 import {
@@ -53,6 +54,10 @@ import {
   formatTweetResults,
   processBatchWithStreaming,
 } from "./lib.js";
+
+const VERSION = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 
 // Configuration
 const API_URL = process.env.BLUEPAGES_API_URL || "https://bluepages.fyi";
@@ -232,7 +237,7 @@ async function postWithAuth(url, body) {
 const server = new Server(
   {
     name: "bluepages",
-    version: "1.0.0",
+    version: VERSION,
   },
   {
     capabilities: {
@@ -1272,7 +1277,7 @@ async function main() {
   console.error(
     "═══════════════════════════════════════════════════════════════",
   );
-  console.error("  Bluepages MCP Server v1.0.0");
+  console.error(`  Bluepages MCP Server v${VERSION}`);
   console.error(
     "═══════════════════════════════════════════════════════════════",
   );
