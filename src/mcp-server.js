@@ -42,6 +42,17 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { ethers } from "ethers";
 import fetch from "node-fetch";
+import {
+  buildHeaders,
+  createPaymentHeader,
+  formatBatchCheckResult,
+  formatBatchDataResult,
+  formatResult,
+  formatStreamingCheckSummary,
+  formatStreamingDataSummary,
+  formatTweetResults,
+  processBatchWithStreaming,
+} from "./lib.js";
 
 // Configuration
 const API_URL = process.env.BLUEPAGES_API_URL || "https://bluepages.fyi";
@@ -65,74 +76,6 @@ if (PRIVATE_KEY && !API_KEY) {
 // Track last known credits for notifications
 let lastKnownCredits = null;
 let serverInstance = null;
-
-/**
- * Create x402 payment header for USDC authorization
- */
-async function createPaymentHeader(paymentRequest) {
-  if (!wallet) {
-    throw new Error(
-      "PRIVATE_KEY environment variable required for x402 payments",
-    );
-  }
-
-  const accept = paymentRequest.accepts[0];
-  const nonce = ethers.hexlify(ethers.randomBytes(32));
-  const validAfter = Math.floor(Date.now() / 1000) - 600;
-  const validBefore = Math.floor(Date.now() / 1000) + accept.maxTimeoutSeconds;
-
-  const authorization = {
-    from: wallet.address,
-    to: accept.payTo,
-    value: accept.maxAmountRequired,
-    validAfter: validAfter.toString(),
-    validBefore: validBefore.toString(),
-    nonce,
-  };
-
-  const domain = {
-    name: "USD Coin",
-    version: "2",
-    chainId: 8453,
-    verifyingContract: accept.asset,
-  };
-
-  const types = {
-    TransferWithAuthorization: [
-      { name: "from", type: "address" },
-      { name: "to", type: "address" },
-      { name: "value", type: "uint256" },
-      { name: "validAfter", type: "uint256" },
-      { name: "validBefore", type: "uint256" },
-      { name: "nonce", type: "bytes32" },
-    ],
-  };
-
-  const signature = await wallet.signTypedData(domain, types, authorization);
-
-  const payment = {
-    x402Version: paymentRequest.x402Version,
-    scheme: accept.scheme,
-    network: accept.network,
-    payload: { signature, authorization },
-  };
-
-  return Buffer.from(JSON.stringify(payment)).toString("base64");
-}
-
-/**
- * Build headers based on authentication mode
- */
-function buildHeaders(contentType = null) {
-  const headers = {};
-  if (API_KEY) {
-    headers["X-API-KEY"] = API_KEY;
-  }
-  if (contentType) {
-    headers["Content-Type"] = contentType;
-  }
-  return headers;
-}
 
 /**
  * Send a notification to the client
@@ -192,7 +135,7 @@ async function checkCreditsAndNotify(credits) {
  * Fetch with automatic authentication (API key or x402 payment)
  */
 async function fetchWithAuth(url, options = {}) {
-  const headers = buildHeaders(options.contentType);
+  const headers = buildHeaders(API_KEY, options.contentType);
 
   // If using API key, just make the request
   if (API_KEY) {
@@ -245,7 +188,7 @@ async function fetchWithAuth(url, options = {}) {
   }
 
   const paymentRequest = await response1.json();
-  const paymentHeader = await createPaymentHeader(paymentRequest);
+  const paymentHeader = await createPaymentHeader(wallet, paymentRequest);
 
   const response2 = await fetch(url, {
     method: options.method || "GET",
@@ -283,266 +226,6 @@ async function postWithAuth(url, body) {
     contentType: "application/json",
     body: JSON.stringify(body),
   });
-}
-
-/**
- * One-line summary of a sanctions entry: source, entity, programs, status
- */
-function describeSanction(s) {
-  const programs = s.programs?.length ? ` [${s.programs.join(", ")}]` : "";
-  const status = s.active ? "active" : `removed ${s.removedAt}`;
-  return `${s.source}: ${s.entity}${programs} — ${status} (added ${s.addedAt})`;
-}
-
-/**
- * Format a result for human-readable output
- */
-function formatResult(result, query) {
-  if (result.found === false) {
-    return `No data found for ${query}`;
-  }
-
-  let output = [];
-
-  // Handle identity search (multiple results)
-  if (result.results && Array.isArray(result.results)) {
-    output.push(`Found ${result.totalMatches} match(es) for "${query}":\n`);
-
-    for (const match of result.results) {
-      output.push(`Address: ${match.address}`);
-      output.push(`  Match: ${match.matchType} = ${match.matchedValue}`);
-
-      if (match.identities && match.identities.length > 0) {
-        for (const identity of match.identities) {
-          output.push(
-            `  ${identity.type}: ${identity.value} (${identity.source})`,
-          );
-        }
-      }
-
-      if (match.labels && match.labels.length > 0) {
-        output.push("  Labels:");
-        for (const label of match.labels) {
-          let line = `    ${label.type}: ${label.name}`;
-          if (label.detail) line += ` (${label.detail})`;
-          line += ` [${label.source}]`;
-          output.push(line);
-        }
-      }
-
-      if (match.sanctions && match.sanctions.length > 0) {
-        output.push("  ⚠ Sanctions:");
-        for (const s of match.sanctions) {
-          output.push(`    ${describeSanction(s)}`);
-        }
-      }
-
-      if (match.cluster) {
-        output.push(
-          `  Cluster: ${match.cluster.id} (${match.cluster.totalAddresses} addresses)`,
-        );
-      }
-      output.push("");
-    }
-
-    return output.join("\n");
-  }
-
-  // Handle single address lookup
-  if (result.address) {
-    output.push(`Address: ${result.address}`);
-  }
-
-  if (result.identities && result.identities.length > 0) {
-    for (const identity of result.identities) {
-      output.push(`${identity.type}: ${identity.value} (${identity.source})`);
-    }
-  }
-
-  if (result.labels && result.labels.length > 0) {
-    output.push("");
-    output.push("Labels:");
-    for (const label of result.labels) {
-      let line = `  ${label.type}: ${label.name}`;
-      if (label.detail) line += ` (${label.detail})`;
-      line += ` [${label.source}]`;
-      output.push(line);
-    }
-  }
-
-  if (result.sanctions && result.sanctions.length > 0) {
-    output.push("");
-    output.push("⚠ Sanctions:");
-    for (const s of result.sanctions) {
-      output.push(`  ${describeSanction(s)}`);
-    }
-  }
-
-  // Cluster info
-  if (result.cluster) {
-    output.push("");
-    output.push(`Cluster: ${result.cluster.id}`);
-    output.push(`  Source: ${result.cluster.source}`);
-    output.push(
-      `  Addresses: ${result.cluster.totalAddresses}${result.cluster.truncated ? " (truncated)" : ""}`,
-    );
-    if (result.cluster.transitive) output.push(`  Transitive: yes`);
-    if (result.cluster.addresses && result.cluster.addresses.length > 0) {
-      output.push(
-        `  Members: ${result.cluster.addresses.slice(0, 5).join(", ")}${result.cluster.addresses.length > 5 ? "..." : ""}`,
-      );
-    }
-  }
-
-  if (result.twitterSearch?.available) {
-    output.push(
-      `\nTip: Use search_tweets to find Twitter/X posts mentioning this address ($0.05)`,
-    );
-  }
-
-  return output.join("\n") || JSON.stringify(result, null, 2);
-}
-
-function formatTweetResults(result, address) {
-  const tweets = result.tweets;
-
-  if (!tweets || tweets.count === 0 || !tweets.results?.length) {
-    return `No tweets found mentioning ${address}`;
-  }
-
-  const output = [`Found ${tweets.count} tweet(s) mentioning ${address}:\n`];
-
-  for (const t of tweets.results) {
-    const date = t.created_at
-      ? new Date(t.created_at).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        })
-      : "unknown date";
-    output.push(`@${t.username || "unknown"} (${date})`);
-    if (t.text) {
-      output.push(`  ${t.text.replace(/\n/g, "\n  ")}`);
-    }
-
-    const stats = [];
-    if (t.reply_count) stats.push(`${t.reply_count} replies`);
-    if (t.retweet_count) stats.push(`${t.retweet_count} reposts`);
-    if (t.like_count) stats.push(`${t.like_count} likes`);
-    if (t.view_count) stats.push(`${t.view_count} views`);
-    if (stats.length > 0) {
-      output.push(`  [${stats.join(", ")}]`);
-    }
-    if (t.url) {
-      output.push(`  ${t.url}`);
-    }
-    output.push("");
-  }
-
-  return output.join("\n");
-}
-
-/**
- * Process batch items with streaming progress updates
- * Handles both /batch/check ({ exists, types[] }) and /batch/data ({ found, identities[], labels[], sanctions[], cluster }) formats
- */
-async function processBatchWithStreaming(
-  items,
-  type,
-  endpoint,
-  progressCallback,
-) {
-  const results = [];
-  const batchSize = 50;
-  const isDataEndpoint = endpoint.includes("/data");
-
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, Math.min(i + batchSize, items.length));
-    const batchNum = Math.floor(i / batchSize) + 1;
-    const totalBatches = Math.ceil(items.length / batchSize);
-
-    // Send progress notification
-    await progressCallback({
-      type: "progress",
-      message: `Processing batch ${batchNum}/${totalBatches} (${batch.length} ${type}s)...`,
-      current: i + batch.length,
-      total: items.length,
-      percentage: Math.round(((i + batch.length) / items.length) * 100),
-    });
-
-    // Make the API call
-    const body =
-      type === "address" ? { addresses: batch } : { identities: batch };
-    const result = await postWithAuth(`${API_URL}${endpoint}`, body);
-
-    // Extract results - response is an object keyed by address/identity
-    const key = type === "address" ? "addresses" : "identities";
-    if (result.results?.[key]) {
-      // Convert object format to array format
-      for (const [itemKey, info] of Object.entries(result.results[key])) {
-        let itemResult;
-
-        if (isDataEndpoint && type === "address") {
-          // /batch/data address entry: { found, identities[], labels[], sanctions[], cluster }
-          itemResult = {
-            address: itemKey,
-            found: info.found === true,
-            identities: info.identities || [],
-            labels: info.labels || [],
-            sanctions: info.sanctions || [],
-            cluster: info.cluster || null,
-          };
-        } else if (isDataEndpoint) {
-          // /batch/data identity entry: { found, totalMatches, results[] }
-          itemResult = {
-            identity: itemKey,
-            found: info.found === true,
-            totalMatches: info.totalMatches || 0,
-            matches: info.results || [],
-          };
-        } else {
-          // /batch/check entry: { exists, types[] } or { error }
-          itemResult = {
-            [type === "address" ? "address" : "identity"]: itemKey,
-            found: info.exists === true,
-            types: info.types || [],
-          };
-        }
-
-        results.push(itemResult);
-
-        // Send individual results as they come in
-        if (itemResult.found) {
-          let message;
-          if (isDataEndpoint) {
-            const parts = [];
-            const ids = info.identities || [];
-            if (ids.length) {
-              const more = ids.length > 1 ? ` +${ids.length - 1} more` : "";
-              parts.push(`${ids[0].type}:${ids[0].value}${more}`);
-            } else if (info.totalMatches) {
-              parts.push(`${info.totalMatches} match(es)`);
-            }
-            if (info.labels?.length)
-              parts.push(`${info.labels.length} label(s)`);
-            if (info.sanctions?.length)
-              parts.push(`⚠ ${info.sanctions.length} sanction(s)`);
-            message = `✓ Found: ${itemKey} → ${parts.join(", ") || "labels only"}`;
-          } else {
-            message = `✓ Found: ${itemKey} (${(info.types || []).join(", ") || "no types"})`;
-          }
-
-          await progressCallback({
-            type: "result",
-            message,
-            item: itemResult,
-          });
-        }
-      }
-    }
-  }
-
-  return results;
 }
 
 // Create MCP server with full capabilities
@@ -909,49 +592,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const result = await postWithAuth(`${API_URL}/batch/check`, body);
 
-        let foundAddresses = 0;
-        let foundIdentities = 0;
-
-        if (result.results?.addresses) {
-          foundAddresses = Object.values(result.results.addresses).filter(
-            (a) => a.exists,
-          ).length;
-        }
-        if (result.results?.identities) {
-          foundIdentities = Object.values(result.results.identities).filter(
-            (i) => i.exists,
-          ).length;
-        }
-
         const total =
           (args.addresses?.length || 0) + (args.identities?.length || 0);
-        const found = foundAddresses + foundIdentities;
-
-        // Entry is { exists, types[] } or { error } for invalid input
-        const describeCheckEntry = (info) => {
-          if (info.error) return `⚠ ${info.error}`;
-          return info.exists
-            ? `✓ found (${info.types?.join(", ") || "no types"})`
-            : "✗ not found";
-        };
-
-        let details = [];
-        for (const [addr, info] of Object.entries(
-          result.results?.addresses || {},
-        )) {
-          details.push(`${addr}: ${describeCheckEntry(info)}`);
-        }
-        for (const [handle, info] of Object.entries(
-          result.results?.identities || {},
-        )) {
-          details.push(`${handle}: ${describeCheckEntry(info)}`);
-        }
 
         return {
           content: [
             {
               type: "text",
-              text: `Batch check complete: ${found}/${total} items found in database\n\n${details.join("\n")}`,
+              text: formatBatchCheckResult(result, total),
             },
           ],
         };
@@ -972,69 +620,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const result = await postWithAuth(`${API_URL}/batch/data`, body);
 
-        let lines = ["Batch data retrieval complete:\n"];
-
-        if (result.results?.addresses) {
-          for (const [addr, info] of Object.entries(result.results.addresses)) {
-            if (info.error) {
-              lines.push(`${addr}: ⚠ ${info.error}`);
-              lines.push("");
-              continue;
-            }
-            if (!info.found) continue;
-            lines.push(`${addr}`);
-            for (const identity of info.identities || []) {
-              lines.push(
-                `  ${identity.type}: ${identity.value} (${identity.source})`,
-              );
-            }
-            if (info.labels && info.labels.length > 0) {
-              lines.push("  Labels:");
-              for (const label of info.labels) {
-                let line = `    ${label.type}: ${label.name}`;
-                if (label.detail) line += ` (${label.detail})`;
-                line += ` [${label.source}]`;
-                lines.push(line);
-              }
-            }
-            if (info.sanctions && info.sanctions.length > 0) {
-              lines.push("  ⚠ Sanctions:");
-              for (const s of info.sanctions) {
-                lines.push(`    ${describeSanction(s)}`);
-              }
-            }
-            if (info.cluster) {
-              lines.push(
-                `  Cluster: ${info.cluster.id} (${info.cluster.totalAddresses} addresses)`,
-              );
-            }
-            lines.push("");
-          }
-        }
-
-        if (result.results?.identities) {
-          for (const [handle, info] of Object.entries(
-            result.results.identities,
-          )) {
-            if (!info.found) continue;
-            lines.push(`${handle}: ${info.totalMatches} match(es)`);
-            for (const match of info.results || []) {
-              const flag = match.sanctions?.some((s) => s.active)
-                ? " ⚠ SANCTIONED"
-                : "";
-              lines.push(
-                `  ${match.address} (${match.matchType} = ${match.matchedValue})${flag}`,
-              );
-            }
-            lines.push("");
-          }
-        }
-
         return {
           content: [
             {
               type: "text",
-              text: lines.join("\n"),
+              text: formatBatchDataResult(result),
             },
           ],
         };
@@ -1062,6 +652,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               progress,
             );
           },
+          (endpoint, body) => postWithAuth(`${API_URL}${endpoint}`, body),
         );
 
         const found = results.filter((r) => r.found).length;
@@ -1077,12 +668,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: `Batch check complete!\n\nFound: ${found}\nNot found: ${notFound}\n\nFound addresses:\n${
-                results
-                  .filter((r) => r.found)
-                  .map((r) => `  ✓ ${r.address}`)
-                  .join("\n") || "  (none)"
-              }`,
+              text: formatStreamingCheckSummary(results),
             },
           ],
         };
@@ -1110,6 +696,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
             await sendNotification("info", progress.message, progress);
           },
+          (endpoint, body) => postWithAuth(`${API_URL}${endpoint}`, body),
         );
 
         await sendNotification(
@@ -1118,43 +705,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           { found: foundItems.length, total: args.addresses.length },
         );
 
-        // Format output - items come from processBatchWithStreaming with parsed fields
-        let output = `Data retrieval complete!\n\nFound: ${foundItems.length}/${args.addresses.length}\n\n`;
-
-        if (foundItems.length > 0) {
-          output += "Results:\n";
-          for (const item of foundItems) {
-            output += `\n${item.address}\n`;
-
-            for (const identity of item.identities || []) {
-              output += `  ${identity.type}: ${identity.value} (${identity.source})\n`;
-            }
-            if (item.labels && item.labels.length > 0) {
-              output += "  Labels:\n";
-              for (const label of item.labels) {
-                let line = `    ${label.type}: ${label.name}`;
-                if (label.detail) line += ` (${label.detail})`;
-                line += ` [${label.source}]`;
-                output += line + "\n";
-              }
-            }
-            if (item.sanctions && item.sanctions.length > 0) {
-              output += "  ⚠ Sanctions:\n";
-              for (const s of item.sanctions) {
-                output += `    ${describeSanction(s)}\n`;
-              }
-            }
-            if (item.cluster) {
-              output += `  Cluster: ${item.cluster.id} (${item.cluster.totalAddresses} addresses)\n`;
-            }
-          }
-        }
-
         return {
           content: [
             {
               type: "text",
-              text: output,
+              text: formatStreamingDataSummary(
+                foundItems,
+                args.addresses.length,
+              ),
             },
           ],
         };
@@ -1330,7 +888,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         const paymentRequest = await response1.json();
-        const paymentHeader = await createPaymentHeader(paymentRequest);
+        const paymentHeader = await createPaymentHeader(wallet, paymentRequest);
 
         // Make payment
         const response2 = await fetch(
