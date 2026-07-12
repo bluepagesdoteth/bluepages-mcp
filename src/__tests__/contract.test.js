@@ -8,7 +8,9 @@
  * file is the tripwire: when bluepages-fyi is checked out as a sibling
  * (devcontainer / eMac workspace), the fixtures are validated against its
  * Zod schemas, so any drift fails `pnpm test` with the offending field
- * named. Outside the workspace (public repo consumers), it skips.
+ * named. Outside the workspace (public repo consumers), it skips — unless
+ * CONTRACT_REQUIRED is set (used by `pnpm run signoff`), in which case a
+ * missing bluepages-fyi is a hard failure instead of a silent skip.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -40,9 +42,25 @@ try {
   // installed) — contract validation only runs inside the workspace.
 }
 
+const required = !!process.env.CONTRACT_REQUIRED;
+
+if (!schemas && required) {
+  describe("API contract: fixtures vs bluepages-fyi response schemas", () => {
+    it("bluepages-fyi schemas are available", () => {
+      assert.fail(
+        `CONTRACT_REQUIRED is set but the schemas could not be imported from ${SCHEMAS_PATH} — ` +
+          "check out bluepages-fyi as a sibling of this repo (with its node_modules installed) " +
+          "before signing off. A signoff must attest that the contract tests ran.",
+      );
+    });
+  });
+}
+
 const skip = schemas
   ? false
-  : "bluepages-fyi repo not available — contract check runs only in the workspace";
+  : required
+    ? "reported as a failure above"
+    : "bluepages-fyi repo not available — contract check runs only in the workspace";
 
 function assertValid(schema, data, name) {
   const result = schema.safeParse(data);

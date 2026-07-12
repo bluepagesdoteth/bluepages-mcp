@@ -18,7 +18,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
-    "test": "node --test \"src/__tests__/*.test.js\""
+    "test": "node --test \"src/__tests__/*.test.js\"",
+    "signoff": "CONTRACT_REQUIRED=1 node --test \"src/__tests__/*.test.js\" && gh signoff"
   },
   "lint-staged": {
     "*": "prettier --write --ignore-unknown"
