@@ -285,7 +285,7 @@ export function formatBatchDataResult(result) {
         lines.push("");
         continue;
       }
-      if (!info.found) continue;
+      if (info.found !== true) continue;
       lines.push(`${addr}`);
       for (const identity of info.identities || []) {
         lines.push(
@@ -318,7 +318,7 @@ export function formatBatchDataResult(result) {
 
   if (result.results?.identities) {
     for (const [handle, info] of Object.entries(result.results.identities)) {
-      if (!info.found) continue;
+      if (info.found !== true) continue;
       lines.push(`${handle}: ${info.totalMatches} match(es)`);
       for (const match of info.results || []) {
         const flag = match.sanctions?.some((s) => s.active)
@@ -478,7 +478,7 @@ export async function processBatchWithStreaming(
               parts.push(`${info.labels.length} label(s)`);
             if (info.sanctions?.length)
               parts.push(`⚠ ${info.sanctions.length} sanction(s)`);
-            message = `✓ Found: ${itemKey} → ${parts.join(", ") || "labels only"}`;
+            message = `✓ Found: ${itemKey} → ${parts.join(", ") || "data available"}`;
           } else {
             message = `✓ Found: ${itemKey} (${(info.types || []).join(", ") || "no types"})`;
           }

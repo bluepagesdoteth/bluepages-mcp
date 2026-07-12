@@ -149,7 +149,7 @@ describe("processBatchWithStreaming", () => {
       .map((e) => e.message);
     assert.deepEqual(messages, [
       "✓ Found: 0x1 → twitter:alice +2 more, 1 label(s), ⚠ 1 sanction(s)",
-      "✓ Found: 0x2 → labels only",
+      "✓ Found: 0x2 → data available",
     ]);
   });
 
