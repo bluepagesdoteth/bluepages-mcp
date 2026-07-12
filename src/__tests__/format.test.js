@@ -366,6 +366,13 @@ describe("formatStreamingCheckSummary", () => {
     ]);
     assert.match(text, /Found addresses:\n {2}\(none\)$/);
   });
+
+  it("falls back to the identity key for identity items", () => {
+    const text = formatStreamingCheckSummary([
+      { identity: "alice", found: true },
+    ]);
+    assert.match(text, /^ {2}✓ alice$/m);
+  });
 });
 
 describe("formatStreamingDataSummary", () => {
@@ -394,5 +401,10 @@ describe("formatStreamingDataSummary", () => {
     assert.match(text, /^ {4}cex: OKX \[hildobby\]$/m);
     assert.match(text, /Tornado Cash — removed/);
     assert.match(text, /^ {2}Cluster: cl_3 \(2 addresses\)$/m);
+  });
+
+  it("falls back to the identity key for identity items", () => {
+    const text = formatStreamingDataSummary([{ identity: "alice" }], 1);
+    assert.match(text, /^alice$/m);
   });
 });

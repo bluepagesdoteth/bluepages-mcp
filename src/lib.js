@@ -13,9 +13,7 @@ import { ethers } from "ethers";
  */
 export async function createPaymentHeader(wallet, paymentRequest) {
   if (!wallet) {
-    throw new Error(
-      "PRIVATE_KEY environment variable required for x402 payments",
-    );
+    throw new Error("Wallet required for x402 payments");
   }
 
   const accept = paymentRequest.accepts[0];
@@ -347,7 +345,7 @@ export function formatStreamingCheckSummary(results) {
   return `Batch check complete!\n\nFound: ${found}\nNot found: ${notFound}\n\nFound addresses:\n${
     results
       .filter((r) => r.found)
-      .map((r) => `  ✓ ${r.address}`)
+      .map((r) => `  ✓ ${r.address ?? r.identity}`)
       .join("\n") || "  (none)"
   }`;
 }
@@ -362,7 +360,7 @@ export function formatStreamingDataSummary(foundItems, total) {
   if (foundItems.length > 0) {
     output += "Results:\n";
     for (const item of foundItems) {
-      output += `\n${item.address}\n`;
+      output += `\n${item.address ?? item.identity}\n`;
 
       for (const identity of item.identities || []) {
         output += `  ${identity.type}: ${identity.value} (${identity.source})\n`;
@@ -407,6 +405,7 @@ export async function processBatchWithStreaming(
   const results = [];
   const batchSize = 50;
   const isDataEndpoint = endpoint.includes("/data");
+  const noun = type === "address" ? "addresses" : "identities";
 
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, Math.min(i + batchSize, items.length));
@@ -416,7 +415,7 @@ export async function processBatchWithStreaming(
     // Send progress notification
     await progressCallback({
       type: "progress",
-      message: `Processing batch ${batchNum}/${totalBatches} (${batch.length} ${type}s)...`,
+      message: `Processing batch ${batchNum}/${totalBatches} (${batch.length} ${noun})...`,
       current: i + batch.length,
       total: items.length,
       percentage: Math.round(((i + batch.length) / items.length) * 100),

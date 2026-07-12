@@ -59,7 +59,7 @@ describe("createPaymentHeader", () => {
   it("throws without a wallet", async () => {
     await assert.rejects(
       createPaymentHeader(null, PAYMENT_REQUEST),
-      /PRIVATE_KEY environment variable required/,
+      /Wallet required for x402 payments/,
     );
   });
 
