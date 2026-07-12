@@ -54,6 +54,16 @@ Add to your MCP client's config (see [MCP clients](https://modelcontextprotocol.
 | `get_api_key`              | free                   | Get/create API key by signing message (PRIVATE_KEY)    |
 | `purchase_credits`         | $5-$600 USDC           | Buy credits via x402 (PRIVATE_KEY only)                |
 
+## Development
+
+```bash
+pnpm install
+pnpm test            # unit + stdio integration tests (node:test, no network)
+pnpm format          # prettier
+```
+
+Formatting logic lives in `src/lib.js`; `src/mcp-server.js` wires it to the MCP transport and the live API.
+
 ## License
 
 MIT
