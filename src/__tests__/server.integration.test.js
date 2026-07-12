@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,7 +48,7 @@ function readBody(req) {
  * real x402 flow.
  */
 async function startFakeApi({ requirePayment = false } = {}) {
-  const state = { requests: [], payments: [] };
+  const state = { requests: [], payments: [], credits: 5000 };
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
@@ -88,7 +88,7 @@ async function startFakeApi({ requirePayment = false } = {}) {
 
     switch (`${req.method} ${url.pathname}`) {
       case "GET /api/me":
-        return json(200, { credits: 5000, points: 123 });
+        return json(200, { credits: state.credits, points: 123 });
 
       case "GET /api/nonce":
         return json(200, { nonce: "testnonce123" });
@@ -231,6 +231,10 @@ describe("mcp server (api-key mode)", () => {
     });
   });
 
+  beforeEach(() => {
+    notifications.length = 0;
+  });
+
   after(async () => {
     await client.close();
     await api.close();
@@ -309,6 +313,35 @@ describe("mcp server (api-key mode)", () => {
     assert.match(text, /nobody: ✗ not found/);
   });
 
+  it("batch_check works with addresses only", async () => {
+    const result = await client.callTool({
+      name: "batch_check",
+      arguments: { addresses: [FOUND_ADDR, MISSING_ADDR] },
+    });
+    const text = textOf(result);
+    assert.match(text, /Batch check complete: 1\/2 items found/);
+    assert.match(text, new RegExp(`${FOUND_ADDR}: ✓ found`));
+  });
+
+  it("batch_check works with identities only", async () => {
+    const result = await client.callTool({
+      name: "batch_check",
+      arguments: { identities: ["vitalik", "nobody"] },
+    });
+    const text = textOf(result);
+    assert.match(text, /Batch check complete: 1\/2 items found/);
+    assert.match(text, /vitalik: ✓ found \(twitter\)/);
+  });
+
+  it("batch_check with no input is an error", async () => {
+    const result = await client.callTool({
+      name: "batch_check",
+      arguments: {},
+    });
+    assert.equal(result.isError, true);
+    assert.match(textOf(result), /At least one address or identity required/);
+  });
+
   it("batch_get_data renders found entries only", async () => {
     const result = await client.callTool({
       name: "batch_get_data",
@@ -336,7 +369,6 @@ describe("mcp server (api-key mode)", () => {
   // strip it, so only `level`, `logger`, and `data` are observable here. The
   // text survives only where processBatchWithStreaming duplicates it in `data`.
   it("batch_check_streaming sends progress notifications and a summary", async () => {
-    notifications.length = 0;
     const result = await client.callTool({
       name: "batch_check_streaming",
       arguments: { addresses: [FOUND_ADDR, MISSING_ADDR] },
@@ -366,7 +398,6 @@ describe("mcp server (api-key mode)", () => {
   });
 
   it("batch_get_data_streaming streams results and renders full data", async () => {
-    notifications.length = 0;
     const result = await client.callTool({
       name: "batch_get_data_streaming",
       arguments: { addresses: [FOUND_ADDR, MISSING_ADDR] },
@@ -465,6 +496,55 @@ describe("mcp server (api-key mode)", () => {
     assert.match(prompt.messages[0].content.text, /0xaaa, 0xbbb/);
     assert.match(prompt.messages[0].content.text, /batch_check/);
   });
+
+  it("streaming tools are address-only by design", async () => {
+    const { tools } = await client.listTools();
+    for (const name of ["batch_check_streaming", "batch_get_data_streaming"]) {
+      const tool = tools.find((t) => t.name === name);
+      assert.deepEqual(Object.keys(tool.inputSchema.properties), ["addresses"]);
+      assert.deepEqual(tool.inputSchema.required, ["addresses"]);
+    }
+  });
+
+  // Warnings fire only on downward threshold crossings, tracked against the
+  // last known balance (seeded by the startup /api/me fetch).
+  it("emits credit warnings on threshold crossings only", async () => {
+    // drop below the low threshold (1000) → warning
+    api.credits = 800;
+    await client.callTool({ name: "check_credits", arguments: {} });
+    await waitFor(() => notifications.length >= 1);
+    assert.equal(notifications[0].level, "warning");
+    assert.deepEqual(notifications[0].data, { credits: 800, threshold: 1000 });
+
+    // a further drop below the same threshold → no repeat warning
+    notifications.length = 0;
+    api.credits = 700;
+    await client.callTool({ name: "check_credits", arguments: {} });
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(notifications.length, 0);
+
+    // crossing the critical threshold (100) → error
+    api.credits = 50;
+    await client.callTool({ name: "check_credits", arguments: {} });
+    await waitFor(() => notifications.length >= 1);
+    assert.equal(notifications[0].level, "error");
+    assert.deepEqual(notifications[0].data, { credits: 50, threshold: 100 });
+
+    // recover, then plunge past BOTH thresholds → critical only, not low
+    api.credits = 5000;
+    await client.callTool({ name: "check_credits", arguments: {} });
+    notifications.length = 0;
+    api.credits = 50;
+    await client.callTool({ name: "check_credits", arguments: {} });
+    await waitFor(() => notifications.length >= 1);
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0].level, "error");
+
+    // restore for any later tests
+    api.credits = 5000;
+    await client.callTool({ name: "check_credits", arguments: {} });
+  });
 });
 
 describe("mcp server (unconfigured mode)", () => {
@@ -527,6 +607,20 @@ describe("mcp server (x402 mode)", () => {
     assert.ok(names.includes("get_api_key"));
     assert.ok(names.includes("purchase_credits"));
     assert.ok(!names.includes("check_credits"));
+  });
+
+  it("serves non-payment routes without a 402 round-trip", async () => {
+    const paymentsBefore = api.payments.length;
+    const result = await client.callTool({
+      name: "check_address",
+      arguments: { address: FOUND_ADDR },
+    });
+    assert.match(textOf(result), /✓ Address .* found in database/);
+
+    // First request succeeded directly: no payment signed, no header sent
+    assert.equal(api.payments.length, paymentsBefore);
+    const checkReq = api.requests.findLast((r) => r.path === "/check");
+    assert.equal(checkReq.headers["x-payment"], undefined);
   });
 
   it("completes the 402 → sign → retry payment flow", async () => {
