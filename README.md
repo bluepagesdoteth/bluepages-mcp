@@ -66,6 +66,17 @@ Formatting logic lives in `src/lib.js`; `src/mcp-server.js` wires it to the MCP 
 
 When the private `bluepages-fyi` repo is checked out as a sibling directory, `contract.test.js` additionally validates the test fixtures against its Zod response schemas (drift tripwire); elsewhere it auto-skips.
 
+### CI and signoff
+
+CI (`.github/workflows/test.yml`) runs the hermetic suite on GitHub-hosted runners, where the contract tests self-skip (no `bluepages-fyi` there). The contract tests are enforced **locally** via [gh-signoff](https://github.com/basecamp/gh-signoff) — run the suite on a dev machine and post the green check yourself:
+
+```bash
+gh extension install basecamp/gh-signoff   # once
+pnpm test && gh signoff                    # full suite incl. contract tests, then sign off
+```
+
+Make `signoff` a required status check on `main` (repo settings → Branches, one-time) so merges require a local run. A husky pre-push hook also runs `pnpm test` as a safety net.
+
 ## License
 
 MIT
