@@ -7,7 +7,8 @@
     "bluepages-mcp": "./src/mcp-server.js"
   },
   "files": [
-    "src/"
+    "src/",
+    "!src/__tests__/"
   ],
   "license": "MIT",
   "homepage": "https://bluepages.fyi",
@@ -15,7 +16,8 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test": "node --test \"src/__tests__/*.test.js\""
   },
   "lint-staged": {
     "*": "prettier --write --ignore-unknown"
