@@ -72,10 +72,12 @@ CI (`.github/workflows/test.yml`) runs the hermetic suite on GitHub-hosted runne
 
 ```bash
 gh extension install basecamp/gh-signoff   # once
-pnpm run signoff                           # strict suite, then gh signoff
+pnpm run signoff                           # preflight → strict suite → gh signoff
 ```
 
-`pnpm run signoff` sets `CONTRACT_REQUIRED=1`: if `bluepages-fyi` is not checked out as a sibling (schemas unavailable), the run **fails** instead of skipping the contract tests — a signoff always attests a full run. Plain `pnpm test` keeps the graceful skip for consumers outside the workspace.
+`pnpm run signoff` starts with a preflight (`pnpm run signoff:doctor`) that checks every prerequisite in one pass — Node ≥ 21, the `bluepages-fyi` sibling checkout, its installed deps (the contract schemas import zod), gh auth, the gh-signoff extension — and lists all missing pieces with their fix commands, instead of failing serially. `pnpm run signoff:doctor --fix` additionally self-heals the deps step (`pnpm install --prod --ignore-scripts` in the sibling; skips the native better-sqlite3 build).
+
+The suite then runs with `CONTRACT_REQUIRED=1`: if `bluepages-fyi` is not checked out as a sibling (schemas unavailable), the run **fails** instead of skipping the contract tests — a signoff always attests a full run, whatever the preflight said. Plain `pnpm test` keeps the graceful skip for consumers outside the workspace.
 
 Make `signoff` a required status check on `main` (repo settings → Branches, one-time) so merges require a local run. A husky pre-push hook also runs `pnpm test` as a safety net.
 

@@ -19,7 +19,8 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "test": "node --test \"src/__tests__/*.test.js\"",
-    "signoff": "CONTRACT_REQUIRED=1 node --test \"src/__tests__/*.test.js\" && gh signoff"
+    "signoff": "node scripts/signoff-doctor.mjs && CONTRACT_REQUIRED=1 node --test \"src/__tests__/*.test.js\" && gh signoff",
+    "signoff:doctor": "node scripts/signoff-doctor.mjs"
   },
   "lint-staged": {
     "*": "prettier --write --ignore-unknown"
