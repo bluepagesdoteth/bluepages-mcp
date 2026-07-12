@@ -274,6 +274,21 @@ describe("mcp server (api-key mode)", () => {
     assert.match(textOf(missing), /✗ Address .* not found/);
   });
 
+  it("check_identity reports found and not-found", async () => {
+    const found = await client.callTool({
+      name: "check_identity",
+      arguments: { identity: FOUND_IDENTITY },
+    });
+    assert.match(textOf(found), /✓ "vitalik" found in database/);
+    assert.match(textOf(found), /types: twitter/);
+
+    const missing = await client.callTool({
+      name: "check_identity",
+      arguments: { identity: "nobody" },
+    });
+    assert.match(textOf(missing), /✗ "nobody" not found in database/);
+  });
+
   it("get_data_for_address renders identities, labels, sanctions, cluster", async () => {
     const result = await client.callTool({
       name: "get_data_for_address",
