@@ -107,7 +107,10 @@ describe(
     it("/batch/data response matches BatchDataResponseSchema", () => {
       assertValid(
         schemas.BatchDataResponseSchema,
-        batchDataResponse([FOUND_ADDR, MISSING_ADDR, ERROR_ADDR]),
+        batchDataResponse(
+          [FOUND_ADDR, MISSING_ADDR, ERROR_ADDR],
+          [FOUND_IDENTITY, "nobody"],
+        ),
         "batchDataResponse",
       );
     });
