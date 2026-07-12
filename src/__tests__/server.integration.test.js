@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { LoggingMessageNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ethers } from "ethers";
 import {
   DATA_ADDRESS_RESPONSE,
@@ -143,7 +144,38 @@ async function startFakeApi({ requirePayment = false } = {}) {
 
       case "POST /batch/data": {
         const body = await readBody(req);
-        return json(200, batchDataResponse(body.addresses || []));
+        return json(
+          200,
+          batchDataResponse(body.addresses || [], body.identities || []),
+        );
+      }
+
+      case "POST /api/credits/purchase": {
+        await readBody(req);
+        const paymentHeader = req.headers["x-payment"];
+        if (!paymentHeader) {
+          return json(402, {
+            x402Version: 1,
+            accepts: [
+              {
+                scheme: "exact",
+                network: "base",
+                payTo: PAY_TO,
+                maxAmountRequired: "5000000",
+                maxTimeoutSeconds: 300,
+                asset: USDC_BASE,
+              },
+            ],
+          });
+        }
+        state.payments.push(
+          JSON.parse(Buffer.from(paymentHeader, "base64").toString("utf8")),
+        );
+        return json(200, {
+          creditsAdded: 5000,
+          newCredits: 5000,
+          transactionHash: "0xtx123",
+        });
       }
 
       default:
@@ -174,15 +206,28 @@ function textOf(result) {
   return result.content[0].text;
 }
 
+async function waitFor(cond, ms = 2000) {
+  const start = Date.now();
+  while (!cond()) {
+    if (Date.now() - start > ms)
+      throw new Error("timeout waiting for condition");
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
 describe("mcp server (api-key mode)", () => {
   let api;
   let client;
+  const notifications = [];
 
   before(async () => {
     api = await startFakeApi();
     client = await startClient({
       BLUEPAGES_API_URL: api.url,
       BLUEPAGES_API_KEY: "bp_test_key",
+    });
+    client.setNotificationHandler(LoggingMessageNotificationSchema, (n) => {
+      notifications.push(n.params);
     });
   });
 
@@ -272,6 +317,84 @@ describe("mcp server (api-key mode)", () => {
     const text = textOf(result);
     assert.match(text, /twitter: vitalik/);
     assert.doesNotMatch(text, new RegExp(MISSING_ADDR));
+  });
+
+  it("batch_get_data renders identity matches", async () => {
+    const result = await client.callTool({
+      name: "batch_get_data",
+      arguments: { identities: ["vitalik", "nobody"] },
+    });
+    const text = textOf(result);
+    assert.match(text, /vitalik: 2 match\(es\)/);
+    assert.match(text, /0xaaa \(twitter = vitalik\)/);
+    assert.doesNotMatch(text, /nobody/);
+    assert.doesNotMatch(text, /SANCTIONED/);
+  });
+
+  // NOTE: the server sends its human-readable `message` as a non-spec param
+  // on notifications/message; spec-compliant clients (incl. the SDK client)
+  // strip it, so only `level`, `logger`, and `data` are observable here. The
+  // text survives only where processBatchWithStreaming duplicates it in `data`.
+  it("batch_check_streaming sends progress notifications and a summary", async () => {
+    notifications.length = 0;
+    const result = await client.callTool({
+      name: "batch_check_streaming",
+      arguments: { addresses: [FOUND_ADDR, MISSING_ADDR] },
+    });
+
+    const text = textOf(result);
+    assert.match(text, /Found: 1\nNot found: 1/);
+    assert.match(text, new RegExp(`✓ ${FOUND_ADDR}`));
+
+    // start → progress → per-item result → completion
+    await waitFor(() => notifications.length >= 4);
+    assert.equal(notifications.length, 4);
+    assert.deepEqual(notifications[0].data, { total: 2 });
+    assert.match(
+      notifications[1].data.message,
+      /Processing batch 1\/1 \(2 addresses\)/,
+    );
+    assert.equal(
+      notifications[2].data.message,
+      `✓ Found: ${FOUND_ADDR} (twitter)`,
+    );
+    assert.deepEqual(notifications[3].data, {
+      found: 1,
+      notFound: 1,
+      total: 2,
+    });
+  });
+
+  it("batch_get_data_streaming streams results and renders full data", async () => {
+    notifications.length = 0;
+    const result = await client.callTool({
+      name: "batch_get_data_streaming",
+      arguments: { addresses: [FOUND_ADDR, MISSING_ADDR] },
+    });
+
+    const text = textOf(result);
+    assert.match(text, /Found: 1\/2/);
+    assert.match(text, /twitter: vitalik \(ens_text_record\)/);
+    assert.match(text, /⚠ Sanctions:/);
+    assert.match(text, /Cluster: cl_42/);
+
+    await waitFor(() => notifications.length >= 4);
+    assert.equal(notifications.length, 4);
+    assert.match(
+      notifications[2].data.message,
+      new RegExp(`✓ Found: ${FOUND_ADDR} → twitter:vitalik \\+1 more`),
+    );
+    // The streamed item carries the parsed payload, sanctions included
+    assert.equal(notifications[2].data.item.sanctions.length, 1);
+    assert.deepEqual(notifications[3].data, { found: 1, total: 2 });
+  });
+
+  it("set_credit_alert updates the warning threshold", async () => {
+    const result = await client.callTool({
+      name: "set_credit_alert",
+      arguments: { threshold: 500 },
+    });
+    assert.match(textOf(result), /✓ Credit alert threshold set to 500 credits/);
   });
 
   it("search_tweets formats tweet results", async () => {
@@ -442,6 +565,47 @@ describe("mcp server (x402 mode)", () => {
       payment.payload.signature,
     );
     assert.equal(recovered, TEST_WALLET_ADDRESS);
+  });
+
+  it("purchase_credits completes the 402 purchase flow", async () => {
+    const paymentsBefore = api.payments.length;
+    const result = await client.callTool({
+      name: "purchase_credits",
+      arguments: { package: "starter" },
+    });
+
+    const text = textOf(result);
+    assert.match(text, /Successfully purchased 5,000 credits/);
+    assert.match(text, /New balance: 5,000 credits/);
+    assert.match(text, /Transaction: 0xtx123/);
+
+    // A signed payment for the starter package price reached the API
+    const payment = api.payments[api.payments.length - 1];
+    assert.equal(api.payments.length, paymentsBefore + 1);
+    assert.equal(payment.payload.authorization.value, "5000000");
+    assert.equal(
+      ethers.verifyTypedData(
+        {
+          name: "USD Coin",
+          version: "2",
+          chainId: 8453,
+          verifyingContract: USDC_BASE,
+        },
+        {
+          TransferWithAuthorization: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        payment.payload.authorization,
+        payment.payload.signature,
+      ),
+      TEST_WALLET_ADDRESS,
+    );
   });
 
   it("get_api_key signs a SIWE message and returns the key", async () => {

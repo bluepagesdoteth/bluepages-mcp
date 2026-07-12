@@ -166,14 +166,14 @@ export function batchCheckResponse(addresses = [], identities = []) {
   };
 }
 
-/** POST /batch/data response for addresses. Both record maps are always present. */
-export function batchDataResponse(addresses = []) {
-  const entries = {};
+/** POST /batch/data response. Both record maps are always present. */
+export function batchDataResponse(addresses = [], identities = []) {
+  const addressEntries = {};
   for (const a of addresses) {
     if (a === ERROR_ADDR) {
-      entries[a] = { error: "Invalid address format" };
+      addressEntries[a] = { error: "Invalid address format" };
     } else if (a === FOUND_ADDR) {
-      entries[a] = {
+      addressEntries[a] = {
         found: true,
         address: FOUND_ADDR,
         identities: IDENTITIES,
@@ -182,14 +182,26 @@ export function batchDataResponse(addresses = []) {
         cluster: CLUSTER,
       };
     } else {
-      entries[a] = { found: false };
+      addressEntries[a] = { found: false };
     }
+  }
+
+  const identityEntries = {};
+  for (const i of identities) {
+    identityEntries[i] =
+      i === FOUND_IDENTITY
+        ? {
+            found: true,
+            totalMatches: DATA_IDENTITY_RESPONSE.totalMatches,
+            results: DATA_IDENTITY_RESPONSE.results,
+          }
+        : { found: false };
   }
 
   return {
     success: true,
     timestamp: TIMESTAMP,
-    totalItems: addresses.length,
-    results: { addresses: entries, identities: {} },
+    totalItems: addresses.length + identities.length,
+    results: { addresses: addressEntries, identities: identityEntries },
   };
 }
