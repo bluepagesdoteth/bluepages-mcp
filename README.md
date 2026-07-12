@@ -64,6 +64,8 @@ pnpm format          # prettier
 
 Formatting logic lives in `src/lib.js`; `src/mcp-server.js` wires it to the MCP transport and the live API.
 
+When the private `bluepages-fyi` repo is checked out as a sibling directory, `contract.test.js` additionally validates the test fixtures against its Zod response schemas (drift tripwire); elsewhere it auto-skips.
+
 ## License
 
 MIT

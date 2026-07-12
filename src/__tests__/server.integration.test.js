@@ -6,6 +6,18 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ethers } from "ethers";
+import {
+  DATA_ADDRESS_RESPONSE,
+  DATA_IDENTITY_RESPONSE,
+  ERROR_ADDR,
+  FOUND_ADDR,
+  FOUND_IDENTITY,
+  MISSING_ADDR,
+  SEARCH_TWEETS_RESPONSE,
+  batchCheckResponse,
+  batchDataResponse,
+  checkResponse,
+} from "./fixtures.js";
 
 const SERVER_PATH = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -18,68 +30,8 @@ const TEST_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const TEST_WALLET_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
-const FOUND_ADDR = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045";
-const MISSING_ADDR = "0x0000000000000000000000000000000000000001";
-const ERROR_ADDR = "0x00000000000000000000000000000000000error";
-
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const PAY_TO = "0x1111111111111111111111111111111111111111";
-
-const DATA_PAYLOAD = {
-  address: FOUND_ADDR,
-  identities: [
-    { type: "twitter", value: "vitalik", source: "ens_text_record" },
-    { type: "github", value: "vbuterin", source: "farcaster" },
-  ],
-  labels: [
-    { type: "cex", name: "Binance", detail: "hot wallet", source: "hildobby" },
-  ],
-  sanctions: [
-    {
-      source: "ofac",
-      entity: "Lazarus Group",
-      programs: ["DPRK3"],
-      addedAt: "2022-04-14",
-      removedAt: null,
-      active: true,
-    },
-  ],
-  cluster: {
-    id: "cl_42",
-    source: "identity-graph",
-    transitive: 1,
-    identified: true,
-    totalAddresses: 3,
-    addresses: [FOUND_ADDR, "0xaaa", "0xbbb"],
-    truncated: false,
-    rawData: null,
-  },
-};
-
-const IDENTITY_PAYLOAD = {
-  found: true,
-  totalMatches: 2,
-  results: [
-    {
-      address: "0xaaa",
-      matchType: "twitter",
-      matchedValue: "vitalik",
-      identities: [{ type: "twitter", value: "vitalik", source: "ens" }],
-      labels: [],
-      sanctions: [],
-      cluster: null,
-    },
-    {
-      address: "0xbbb",
-      matchType: "twitter",
-      matchedValue: "vitalik",
-      identities: [],
-      labels: [],
-      sanctions: [],
-      cluster: null,
-    },
-  ],
-};
 
 function readBody(req) {
   return new Promise((resolve) => {
@@ -156,72 +108,42 @@ async function startFakeApi({ requirePayment = false } = {}) {
       case "GET /check": {
         const addr = url.searchParams.get("address");
         const identity = url.searchParams.get("identity");
-        const subject = addr || identity;
-        const exists = subject === FOUND_ADDR || subject === "vitalik";
-        return json(200, exists ? { exists, types: ["twitter"] } : { exists });
+        const exists = addr === FOUND_ADDR || identity === FOUND_IDENTITY;
+        return json(
+          200,
+          checkResponse(
+            addr ? "address" : "identity",
+            addr || identity,
+            exists,
+          ),
+        );
       }
 
       case "GET /data": {
         const addr = url.searchParams.get("address");
-        if (url.searchParams.get("identity") === "vitalik") {
-          return json(200, IDENTITY_PAYLOAD);
+        if (url.searchParams.get("identity") === FOUND_IDENTITY) {
+          return json(200, DATA_IDENTITY_RESPONSE);
         }
-        if (addr === FOUND_ADDR) return json(200, DATA_PAYLOAD);
+        if (addr === FOUND_ADDR) return json(200, DATA_ADDRESS_RESPONSE);
         if (addr === ERROR_ADDR)
           return json(500, { error: "database exploded" });
         return json(200, { found: false });
       }
 
       case "GET /search/tweets":
-        return json(200, {
-          tweets: {
-            count: 1,
-            results: [
-              {
-                username: "zachxbt",
-                created_at: "2025-03-15T12:00:00Z",
-                text: "scam alert",
-                like_count: 5,
-                url: "https://x.com/zachxbt/status/1",
-              },
-            ],
-          },
-        });
+        return json(200, SEARCH_TWEETS_RESPONSE);
 
       case "POST /batch/check": {
         const body = await readBody(req);
-        const results = {};
-        if (body.addresses) {
-          results.addresses = {};
-          for (const a of body.addresses) {
-            results.addresses[a] =
-              a === FOUND_ADDR
-                ? { exists: true, types: ["twitter"] }
-                : { exists: false };
-          }
-        }
-        if (body.identities) {
-          results.identities = {};
-          for (const i of body.identities) {
-            results.identities[i] =
-              i === "vitalik"
-                ? { exists: true, types: ["twitter"] }
-                : { exists: false };
-          }
-        }
-        return json(200, { results });
+        return json(
+          200,
+          batchCheckResponse(body.addresses || [], body.identities || []),
+        );
       }
 
       case "POST /batch/data": {
         const body = await readBody(req);
-        const results = { addresses: {} };
-        for (const a of body.addresses || []) {
-          results.addresses[a] =
-            a === FOUND_ADDR
-              ? { found: true, ...DATA_PAYLOAD }
-              : { found: false };
-        }
-        return json(200, { results });
+        return json(200, batchDataResponse(body.addresses || []));
       }
 
       default:
