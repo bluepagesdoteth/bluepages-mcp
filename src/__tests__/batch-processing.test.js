@@ -71,7 +71,7 @@ describe("processBatchWithStreaming", () => {
         [120, 120, 100],
       ],
     );
-    assert.equal(progress[0].message, "Processing batch 1/3 (50 addresss)...");
+    assert.equal(progress[0].message, "Processing batch 1/3 (50 addresses)...");
   });
 
   it("maps /batch/check entries and reports only found items", async () => {
@@ -190,6 +190,12 @@ describe("processBatchWithStreaming", () => {
     const resultEvents = events.filter((e) => e.type === "result");
     assert.equal(resultEvents.length, 1);
     assert.equal(resultEvents[0].message, "✓ Found: alice → 2 match(es)");
+
+    const progressEvents = events.filter((e) => e.type === "progress");
+    assert.equal(
+      progressEvents[0].message,
+      "Processing batch 1/1 (2 identities)...",
+    );
   });
 
   it("returns an empty array for empty input without calling the API", async () => {
