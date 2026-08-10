@@ -94,6 +94,7 @@ export const DATA_IDENTITY_RESPONSE = {
   query: query("identity", FOUND_IDENTITY),
   found: true,
   totalMatches: 2,
+  truncated: false,
   results: [
     {
       address: "0xaaa",
@@ -193,6 +194,7 @@ export function batchDataResponse(addresses = [], identities = []) {
         ? {
             found: true,
             totalMatches: DATA_IDENTITY_RESPONSE.totalMatches,
+            truncated: DATA_IDENTITY_RESPONSE.truncated,
             results: DATA_IDENTITY_RESPONSE.results,
           }
         : { found: false };
