@@ -2,7 +2,7 @@
 
 [MCP](https://modelcontextprotocol.io) server for [Bluepages](https://bluepages.fyi) — crypto address ↔ identity and label lookups.
 
-6M+ addresses linked to 4M+ social accounts and 4,800+ labeled wallets across 30+ sources. Identities span 10+ platforms (Twitter/X, Farcaster, GitHub, Discord, Telegram, email, and more). Lookups also return address labels (CEX wallets, exchanges), sanctions screening (OFAC and other lists), and cluster detection. Supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, and XRP addresses.
+6M+ addresses linked to 4M+ social accounts and 4,800+ labeled wallets across 30+ sources. Identities span 10+ platforms (Twitter/X, Farcaster, GitHub, Discord, Telegram, email, and more). Lookups also return address labels (CEX wallets, exchanges), sanctions screening (OFAC and other lists), and cluster detection. Supports ETH, BTC, LTC, BCH, SOL, TRON, DASH, DOGE, XMR, ZEC, ADA, XLM, ALGO, BNB, LSK, SC, TON, Celestia, XRP addresses (lookups are case-insensitive).
 
 ## Quick start
 

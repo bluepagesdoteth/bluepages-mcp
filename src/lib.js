@@ -9,6 +9,23 @@
 import { ethers } from "ethers";
 
 /**
+ * Canonical enumeration of address families the Bluepages API accepts,
+ * mirrored from bluepages-fyi's src/input-validator.js (the server's own
+ * validation order). Single-sourced here so every tool/resource/prompt
+ * description in mcp-server.js advertises the same chains — the mcp server
+ * does no client-side address validation, so an MCP client only learns what
+ * it can pass by reading these descriptions. Update this list (and the
+ * matching reverse-direction fixture in the contract test) whenever
+ * bluepages-fyi adds or removes a supported address family.
+ */
+export const SUPPORTED_CHAINS =
+  "ETH, BTC, LTC, BCH, SOL, TRON, DASH, DOGE, XMR, ZEC, ADA, XLM, ALGO, BNB, LSK, SC, TON, Celestia, XRP";
+
+/** Appended to per-tool descriptions that accept addresses. */
+export const CASE_INSENSITIVE_NOTE =
+  "Lookups are case-insensitive; pass addresses exactly as given.";
+
+/**
  * Create x402 payment header for USDC authorization
  */
 export async function createPaymentHeader(wallet, paymentRequest) {
