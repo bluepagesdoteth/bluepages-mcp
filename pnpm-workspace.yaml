@@ -1,0 +1,7 @@
+# Dependency cooldown: newly published package versions are quarantined for
+# 7 days (10080 minutes) before pnpm will resolve them — supply-chain
+# mitigation; most malicious releases are flagged within days of publish.
+# Enforcement requires the pinned pnpm >= 10.34.5 (older versions silently
+# ignore these settings).
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
