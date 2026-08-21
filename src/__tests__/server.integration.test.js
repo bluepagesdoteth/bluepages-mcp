@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { LoggingMessageNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ethers } from "ethers";
+import { CASE_INSENSITIVE_NOTE, SUPPORTED_CHAINS } from "../lib.js";
 import {
   DATA_ADDRESS_RESPONSE,
   DATA_IDENTITY_RESPONSE,
@@ -519,6 +520,105 @@ describe("mcp server (api-key mode)", () => {
       assert.deepEqual(Object.keys(tool.inputSchema.properties), ["addresses"]);
       assert.deepEqual(tool.inputSchema.required, ["addresses"]);
     }
+  });
+
+  // The mcp server does no client-side address validation by design (see
+  // chain-validator-contract.test.js) — an mcp client only learns which
+  // address families it may pass by reading these descriptions live. This
+  // pins that the actually-running server (not just the source file —
+  // chain-advertisement.test.js covers that) advertises the single-sourced
+  // canonical list everywhere an address is accepted, and never the stale
+  // 8-chain list it replaced.
+  it("advertises the canonical chain list on every address-accepting tool/resource/prompt", async () => {
+    const STALE_CHAINS = "ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP";
+    const { tools } = await client.listTools();
+
+    // Main tool descriptions: all 7 address-accepting tools carry the
+    // case-insensitivity note; only check_address's also embeds the chain
+    // list itself (the only one that already did before this change).
+    const addressToolNames = [
+      "check_address",
+      "get_data_for_address",
+      "batch_check",
+      "batch_get_data",
+      "batch_check_streaming",
+      "batch_get_data_streaming",
+      "search_tweets",
+    ];
+    for (const name of addressToolNames) {
+      const tool = tools.find((t) => t.name === name);
+      assert.ok(tool, `${name} tool not found`);
+      assert.ok(
+        tool.description.includes(CASE_INSENSITIVE_NOTE),
+        `${name} description missing the case-insensitivity note`,
+      );
+      assert.ok(
+        !tool.description.includes(STALE_CHAINS),
+        `${name} description still has the stale chain list`,
+      );
+    }
+    assert.ok(
+      tools
+        .find((t) => t.name === "check_address")
+        .description.includes(SUPPORTED_CHAINS),
+    );
+
+    // Property descriptions that enumerate chains.
+    const singleAddressProps = [
+      "check_address",
+      "get_data_for_address",
+      "search_tweets",
+    ];
+    for (const name of singleAddressProps) {
+      const tool = tools.find((t) => t.name === name);
+      const desc = tool.inputSchema.properties.address.description;
+      assert.ok(
+        desc.includes(SUPPORTED_CHAINS),
+        `${name} address property missing canonical list`,
+      );
+      assert.ok(
+        !desc.includes(STALE_CHAINS),
+        `${name} address property has the stale list`,
+      );
+    }
+    const arrayAddressTools = [
+      "batch_check",
+      "batch_get_data",
+      "batch_check_streaming",
+      "batch_get_data_streaming",
+    ];
+    for (const name of arrayAddressTools) {
+      const tool = tools.find((t) => t.name === name);
+      const desc = tool.inputSchema.properties.addresses.description;
+      assert.ok(
+        desc.includes(SUPPORTED_CHAINS),
+        `${name} addresses property missing canonical list`,
+      );
+      assert.ok(
+        !desc.includes(STALE_CHAINS),
+        `${name} addresses property has the stale list`,
+      );
+    }
+
+    // Resource text (bluepages://info).
+    const info = await client.readResource({ uri: "bluepages://info" });
+    assert.ok(info.contents[0].text.includes(SUPPORTED_CHAINS));
+    assert.ok(!info.contents[0].text.includes(STALE_CHAINS));
+
+    // Prompt argument descriptions.
+    const { prompts } = await client.listPrompts();
+    const analyzeAddresses = prompts.find(
+      (p) => p.name === "analyze_addresses",
+    );
+    assert.ok(
+      analyzeAddresses.arguments[0].description.includes(SUPPORTED_CHAINS),
+    );
+    const analyzeLargeList = prompts.find(
+      (p) => p.name === "analyze_large_list",
+    );
+    assert.ok(
+      analyzeLargeList.arguments[0].description.includes(SUPPORTED_CHAINS),
+    );
   });
 
   // Warnings fire only on downward threshold crossings, tracked against the

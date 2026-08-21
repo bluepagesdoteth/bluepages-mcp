@@ -45,6 +45,7 @@ import { ethers } from "ethers";
 import fetch from "node-fetch";
 import {
   buildHeaders,
+  CASE_INSENSITIVE_NOTE,
   createPaymentHeader,
   formatBatchCheckResult,
   formatBatchDataResult,
@@ -53,6 +54,7 @@ import {
   formatStreamingDataSummary,
   formatTweetResults,
   processBatchWithStreaming,
+  SUPPORTED_CHAINS,
 } from "./lib.js";
 
 const VERSION = JSON.parse(
@@ -258,15 +260,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   const tools = [
     {
       name: "check_address",
-      description:
-        "Check if a cryptocurrency address exists in the Bluepages database (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP). Returns whether data is available. Fast and cheap - use this first before fetching full data. Cost: 1 credit ($0.001 USD).",
+      description: `Check if a cryptocurrency address exists in the Bluepages database (${SUPPORTED_CHAINS}). Returns whether data is available. Fast and cheap - use this first before fetching full data. Cost: 1 credit ($0.001 USD). ${CASE_INSENSITIVE_NOTE}`,
       inputSchema: {
         type: "object",
         properties: {
           address: {
             type: "string",
-            description:
-              "Cryptocurrency address to check (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+            description: `Cryptocurrency address to check (${SUPPORTED_CHAINS})`,
           },
         },
         required: ["address"],
@@ -290,15 +290,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     },
     {
       name: "get_data_for_address",
-      description:
-        "Get identity data for a SINGLE address. For MULTIPLE addresses, use batch_get_data instead (faster and cheaper). Cost: 50 credits when data found, free if not found.",
+      description: `Get identity data for a SINGLE address. For MULTIPLE addresses, use batch_get_data instead (faster and cheaper). Cost: 50 credits when data found, free if not found. ${CASE_INSENSITIVE_NOTE}`,
       inputSchema: {
         type: "object",
         properties: {
           address: {
             type: "string",
-            description:
-              "Cryptocurrency address (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+            description: `Cryptocurrency address (${SUPPORTED_CHAINS})`,
           },
         },
         required: ["address"],
@@ -322,16 +320,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     },
     {
       name: "batch_check",
-      description:
-        "Check multiple addresses and/or identities at once (up to 50 total). More efficient than individual checks. Cost: 40 credits ($0.04 USD) per batch.",
+      description: `Check multiple addresses and/or identities at once (up to 50 total). More efficient than individual checks. Cost: 40 credits ($0.04 USD) per batch. ${CASE_INSENSITIVE_NOTE}`,
       inputSchema: {
         type: "object",
         properties: {
           addresses: {
             type: "array",
             items: { type: "string" },
-            description:
-              "Array of cryptocurrency addresses to check (max 50 total with identities). Supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP.",
+            description: `Array of cryptocurrency addresses to check (max 50 total with identities). Supports ${SUPPORTED_CHAINS}.`,
           },
           identities: {
             type: "array",
@@ -344,16 +340,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     },
     {
       name: "batch_get_data",
-      description:
-        "RECOMMENDED for multiple addresses. Get full data for up to 50 addresses/identities at once. Much cheaper than individual get_data calls. First use batch_check to find which have data, then call this. Cost: API key users pay 40 credits per item found; x402 users pay $2.00 flat per batch.",
+      description: `RECOMMENDED for multiple addresses. Get full data for up to 50 addresses/identities at once. Much cheaper than individual get_data calls. First use batch_check to find which have data, then call this. Cost: API key users pay 40 credits per item found; x402 users pay $2.00 flat per batch. ${CASE_INSENSITIVE_NOTE}`,
       inputSchema: {
         type: "object",
         properties: {
           addresses: {
             type: "array",
             items: { type: "string" },
-            description:
-              "Array of cryptocurrency addresses to get data for (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+            description: `Array of cryptocurrency addresses to get data for (${SUPPORTED_CHAINS})`,
           },
           identities: {
             type: "array",
@@ -366,16 +360,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     },
     {
       name: "batch_check_streaming",
-      description:
-        "Check a large list of addresses with streaming progress updates. Use this for lists larger than 50 items. Sends progress notifications as batches complete. Cost: 40 credits per batch of 50.",
+      description: `Check a large list of addresses with streaming progress updates. Use this for lists larger than 50 items. Sends progress notifications as batches complete. Cost: 40 credits per batch of 50. ${CASE_INSENSITIVE_NOTE}`,
       inputSchema: {
         type: "object",
         properties: {
           addresses: {
             type: "array",
             items: { type: "string" },
-            description:
-              "Array of cryptocurrency addresses to check (any size, processed in batches of 50). Supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP.",
+            description: `Array of cryptocurrency addresses to check (any size, processed in batches of 50). Supports ${SUPPORTED_CHAINS}.`,
           },
         },
         required: ["addresses"],
@@ -383,16 +375,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     },
     {
       name: "batch_get_data_streaming",
-      description:
-        "Get data for a large list of addresses with streaming progress updates. Use this for lists larger than 50 items. Sends notifications as results are found. Cost: API key users pay 40 credits per item found; x402 users pay $2.00 per batch of 50.",
+      description: `Get data for a large list of addresses with streaming progress updates. Use this for lists larger than 50 items. Sends notifications as results are found. Cost: API key users pay 40 credits per item found; x402 users pay $2.00 per batch of 50. ${CASE_INSENSITIVE_NOTE}`,
       inputSchema: {
         type: "object",
         properties: {
           addresses: {
             type: "array",
             items: { type: "string" },
-            description:
-              "Array of cryptocurrency addresses to get data for (any size, processed in batches of 50). Supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP.",
+            description: `Array of cryptocurrency addresses to get data for (any size, processed in batches of 50). Supports ${SUPPORTED_CHAINS}.`,
           },
         },
         required: ["addresses"],
@@ -400,15 +390,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     },
     {
       name: "search_tweets",
-      description:
-        "Search Twitter/X for tweets mentioning a cryptocurrency address. Returns recent tweets that reference the address. Useful for finding on-chain activity discussions, scam reports, or community mentions. Cost: 50 credits ($0.05) — always charged even if no tweets are found.",
+      description: `Search Twitter/X for tweets mentioning a cryptocurrency address. Returns recent tweets that reference the address. Useful for finding on-chain activity discussions, scam reports, or community mentions. Cost: 50 credits ($0.05) — always charged even if no tweets are found. ${CASE_INSENSITIVE_NOTE}`,
       inputSchema: {
         type: "object",
         properties: {
           address: {
             type: "string",
-            description:
-              "Cryptocurrency address to search for on Twitter/X (supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+            description: `Cryptocurrency address to search for on Twitter/X (supports ${SUPPORTED_CHAINS})`,
           },
         },
         required: ["address"],
@@ -1007,7 +995,7 @@ ${"─".repeat(60)}
             }Bluepages API - Crypto Address ↔ Identity Lookup Service
 
 Bluepages maintains a database of over 800,000 connections between
-cryptocurrency addresses (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)
+cryptocurrency addresses (${SUPPORTED_CHAINS})
 and social identities (Twitter, Farcaster, GitHub, Discord,
 email, Telegram, Instagram, Reddit, LinkedIn, and more).
 
@@ -1161,8 +1149,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
         arguments: [
           {
             name: "addresses",
-            description:
-              "Comma-separated list of cryptocurrency addresses (ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+            description: `Comma-separated list of cryptocurrency addresses (${SUPPORTED_CHAINS})`,
             required: true,
           },
         ],
@@ -1187,8 +1174,7 @@ server.setRequestHandler(ListPromptsRequestSchema, async () => {
         arguments: [
           {
             name: "addresses",
-            description:
-              "Comma-separated list of cryptocurrency addresses (any size, supports ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP)",
+            description: `Comma-separated list of cryptocurrency addresses (any size, supports ${SUPPORTED_CHAINS})`,
             required: true,
           },
         ],
