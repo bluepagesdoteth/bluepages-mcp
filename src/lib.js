@@ -19,7 +19,7 @@ import { ethers } from "ethers";
  * bluepages-fyi adds or removes a supported address family.
  */
 export const SUPPORTED_CHAINS =
-  "ETH, BTC, LTC, BCH, SOL, TRON, DASH, DOGE, XMR, ZEC, ADA, XLM, ALGO, BNB, LSK, SC, TON, Celestia, XRP";
+  "ETH, BTC, LTC, BCH, SOL, TRON, DASH, DOGE, XMR, ZEC, ADA, XLM, ALGO, BNB, LSK, SC, TON, Celestia, XRP, APT/SUI, DOT, ATOM, ZIL, EGLD, INJ, NEAR, EOS";
 
 /** Appended to per-tool descriptions that accept addresses. */
 export const CASE_INSENSITIVE_NOTE =

@@ -82,12 +82,21 @@ const EXAMPLE_ADDRESSES = {
   TON: "EQ" + "A".repeat(46),
   Celestia: "celestia1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9",
   XRP: "r" + "A".repeat(24), // classic variant
+  // Added to bluepages-fyi on 2026-08-27 (8 families, 8 patterns).
+  "APT/SUI": "0x" + "1234567890abcdef".repeat(4), // shared 32-byte hex format
+  DOT: "1" + "A".repeat(47),
+  ATOM: "cosmos1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry",
+  ZIL: "zil1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9",
+  EGLD: "erd1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
+  INJ: "inj1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9",
+  NEAR: "alice.near", // named accounts only (RE_NEAR_NAMED)
+  EOS: "eosio.token",
 };
 
 // The RE_ const names bluepages-fyi's input-validator.js declares as of this
-// writing — 24 patterns covering the 19 families above (BTC, LTC, ADA, XMR,
+// writing — 32 patterns covering the 27 families above (BTC, LTC, ADA, XMR,
 // and ZEC each have 2 address-shape variants; XMR also has a standalone
-// payment-id variant). If this set ever changes, bluepages-fyi added or
+// payment-id variant; APT/SUI share one 32-byte hex pattern). If this set ever changes, bluepages-fyi added or
 // removed a supported address family and the advertisement needs revisiting:
 // update SUPPORTED_CHAINS in ../lib.js, every mcp-server.js description that
 // uses it, EXAMPLE_ADDRESSES above, and finally this list to the new
@@ -96,17 +105,24 @@ const EXPECTED_RE_NAMES = [
   "RE_ADA_BYRON",
   "RE_ADA_SHELLEY",
   "RE_ALGO",
+  "RE_APTOS_SUI",
   "RE_BCH_CASHADDR",
   "RE_BNB",
   "RE_BTC_BASE58",
   "RE_BTC_BECH32",
   "RE_CELESTIA",
+  "RE_COSMOS",
   "RE_DASH",
   "RE_DOGE",
+  "RE_ELROND",
+  "RE_EOS",
   "RE_ETH",
+  "RE_INJECTIVE",
   "RE_LSK",
   "RE_LTC_BASE58",
   "RE_LTC_BECH32",
+  "RE_NEAR_NAMED",
+  "RE_POLKADOT",
   "RE_SC",
   "RE_SOL",
   "RE_TON",
@@ -117,6 +133,7 @@ const EXPECTED_RE_NAMES = [
   "RE_XRP",
   "RE_ZEC_TRANSPARENT",
   "RE_ZEC_UNIFIED",
+  "RE_ZIL",
 ].sort();
 
 describe(
