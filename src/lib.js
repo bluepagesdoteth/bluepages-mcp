@@ -26,32 +26,38 @@ export const CASE_INSENSITIVE_NOTE =
   "Lookups are case-insensitive; pass addresses exactly as given.";
 
 /**
- * Create x402 payment header for USDC authorization
+ * Create x402 v2 payment header for USDC authorization.
+ *
+ * `paymentRequired` is the decoded PaymentRequired object (see
+ * `parsePaymentRequired`): `{ x402Version: 2, resource, accepts: [...] }`.
  */
-export async function createPaymentHeader(wallet, paymentRequest) {
+export async function createPaymentHeader(wallet, paymentRequired) {
   if (!wallet) {
     throw new Error("Wallet required for x402 payments");
   }
 
-  const accept = paymentRequest.accepts[0];
+  const accepted =
+    paymentRequired.accepts.find((r) => r.network === "eip155:8453") ??
+    paymentRequired.accepts[0];
   const nonce = ethers.hexlify(ethers.randomBytes(32));
   const validAfter = Math.floor(Date.now() / 1000) - 600;
-  const validBefore = Math.floor(Date.now() / 1000) + accept.maxTimeoutSeconds;
+  const validBefore =
+    Math.floor(Date.now() / 1000) + accepted.maxTimeoutSeconds;
 
   const authorization = {
     from: wallet.address,
-    to: accept.payTo,
-    value: accept.maxAmountRequired,
+    to: accepted.payTo,
+    value: accepted.amount,
     validAfter: validAfter.toString(),
     validBefore: validBefore.toString(),
     nonce,
   };
 
   const domain = {
-    name: "USD Coin",
-    version: "2",
-    chainId: 8453,
-    verifyingContract: accept.asset,
+    name: accepted.extra?.name ?? "USD Coin",
+    version: accepted.extra?.version ?? "2",
+    chainId: Number(accepted.network.split(":")[1]),
+    verifyingContract: accepted.asset,
   };
 
   const types = {
@@ -68,13 +74,33 @@ export async function createPaymentHeader(wallet, paymentRequest) {
   const signature = await wallet.signTypedData(domain, types, authorization);
 
   const payment = {
-    x402Version: paymentRequest.x402Version,
-    scheme: accept.scheme,
-    network: accept.network,
+    x402Version: 2,
+    resource: paymentRequired.resource,
+    accepted,
     payload: { signature, authorization },
   };
 
   return Buffer.from(JSON.stringify(payment)).toString("base64");
+}
+
+/**
+ * Parse a 402 response into the decoded PaymentRequired object.
+ *
+ * The authoritative v2 channel is the `PAYMENT-REQUIRED` response header
+ * (base64 JSON); `response.headers.get` is case-insensitive per the Fetch
+ * spec, so the lowercase name here matches whatever case the server sent.
+ * Falls back to the already-parsed JSON body only when it is itself a v2
+ * PaymentRequired object (bluepages-fyi mirrors the header into the body).
+ */
+export function parsePaymentRequired(response, body) {
+  const header = response.headers.get("payment-required");
+  if (header) {
+    return JSON.parse(Buffer.from(header, "base64").toString("utf8"));
+  }
+  if (body?.x402Version === 2) {
+    return body;
+  }
+  throw new Error("Invalid payment required response");
 }
 
 /**

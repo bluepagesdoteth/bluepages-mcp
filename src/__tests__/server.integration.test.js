@@ -44,9 +44,37 @@ function readBody(req) {
 }
 
 /**
- * Minimal fake Bluepages API. With `requirePayment`, /data demands an
- * X-PAYMENT header (402 first, then accepts the signed retry) like the
- * real x402 flow.
+ * Build a v2 PaymentRequired object (see bluepages-fyi's wire spec: the
+ * `PAYMENT-REQUIRED` header carries this, base64-encoded, and the JSON body
+ * mirrors it).
+ */
+function paymentRequiredFor(amount, resource) {
+  return {
+    x402Version: 2,
+    error: "PAYMENT-SIGNATURE header is required",
+    resource,
+    accepts: [
+      {
+        scheme: "exact",
+        network: "eip155:8453",
+        payTo: PAY_TO,
+        amount,
+        asset: USDC_BASE,
+        maxTimeoutSeconds: 300,
+        extra: {
+          name: "USD Coin",
+          version: "2",
+          assetTransferMethod: "eip3009",
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Minimal fake Bluepages API. With `requirePayment`, /data demands a
+ * PAYMENT-SIGNATURE header (402 first, then accepts the signed retry) like
+ * the real x402 v2 flow.
  */
 async function startFakeApi({ requirePayment = false } = {}) {
   const state = { requests: [], payments: [], credits: 5000 };
@@ -65,22 +93,27 @@ async function startFakeApi({ requirePayment = false } = {}) {
       res.end(JSON.stringify(body));
     };
 
+    const json402 = (paymentRequired) => {
+      const header = Buffer.from(JSON.stringify(paymentRequired)).toString(
+        "base64",
+      );
+      res.writeHead(402, {
+        "Content-Type": "application/json",
+        "PAYMENT-REQUIRED": header,
+      });
+      res.end(JSON.stringify(paymentRequired));
+    };
+
     if (requirePayment && url.pathname === "/data") {
-      const paymentHeader = req.headers["x-payment"];
+      const paymentHeader = req.headers["payment-signature"];
       if (!paymentHeader) {
-        return json(402, {
-          x402Version: 1,
-          accepts: [
-            {
-              scheme: "exact",
-              network: "base",
-              payTo: PAY_TO,
-              maxAmountRequired: "50000",
-              maxTimeoutSeconds: 300,
-              asset: USDC_BASE,
-            },
-          ],
-        });
+        return json402(
+          paymentRequiredFor("50000", {
+            url: `http://${req.headers.host}/data`,
+            description: "Address/identity data lookup",
+            mimeType: "application/json",
+          }),
+        );
       }
       state.payments.push(
         JSON.parse(Buffer.from(paymentHeader, "base64").toString("utf8")),
@@ -153,21 +186,15 @@ async function startFakeApi({ requirePayment = false } = {}) {
 
       case "POST /api/credits/purchase": {
         await readBody(req);
-        const paymentHeader = req.headers["x-payment"];
+        const paymentHeader = req.headers["payment-signature"];
         if (!paymentHeader) {
-          return json(402, {
-            x402Version: 1,
-            accepts: [
-              {
-                scheme: "exact",
-                network: "base",
-                payTo: PAY_TO,
-                maxAmountRequired: "5000000",
-                maxTimeoutSeconds: 300,
-                asset: USDC_BASE,
-              },
-            ],
-          });
+          return json402(
+            paymentRequiredFor("5000000", {
+              url: `http://${req.headers.host}/api/credits/purchase`,
+              description: "Credit package purchase",
+              mimeType: "application/json",
+            }),
+          );
         }
         state.payments.push(
           JSON.parse(Buffer.from(paymentHeader, "base64").toString("utf8")),
@@ -735,7 +762,7 @@ describe("mcp server (x402 mode)", () => {
     // First request succeeded directly: no payment signed, no header sent
     assert.equal(api.payments.length, paymentsBefore);
     const checkReq = api.requests.findLast((r) => r.path === "/check");
-    assert.equal(checkReq.headers["x-payment"], undefined);
+    assert.equal(checkReq.headers["payment-signature"], undefined);
   });
 
   it("completes the 402 → sign → retry payment flow", async () => {
@@ -748,7 +775,10 @@ describe("mcp server (x402 mode)", () => {
     // The fake API saw exactly one signed payment for this call
     assert.equal(api.payments.length, 1);
     const payment = api.payments[0];
-    assert.equal(payment.scheme, "exact");
+    assert.equal(payment.x402Version, 2);
+    assert.equal(payment.accepted.scheme, "exact");
+    assert.equal(payment.accepted.network, "eip155:8453");
+    assert.equal(payment.resource.url, `${api.url}/data`);
     assert.equal(payment.payload.authorization.to, PAY_TO);
     assert.equal(payment.payload.authorization.value, "50000");
 

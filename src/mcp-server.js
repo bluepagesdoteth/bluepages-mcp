@@ -53,6 +53,7 @@ import {
   formatStreamingCheckSummary,
   formatStreamingDataSummary,
   formatTweetResults,
+  parsePaymentRequired,
   processBatchWithStreaming,
   SUPPORTED_CHAINS,
 } from "./lib.js";
@@ -194,15 +195,16 @@ async function fetchWithAuth(url, options = {}) {
     );
   }
 
-  const paymentRequest = await response1.json();
-  const paymentHeader = await createPaymentHeader(wallet, paymentRequest);
+  const body = await response1.json().catch(() => null);
+  const paymentRequired = parsePaymentRequired(response1, body);
+  const paymentHeader = await createPaymentHeader(wallet, paymentRequired);
 
   const response2 = await fetch(url, {
     method: options.method || "GET",
     headers: {
       ...headers,
       ...options.headers,
-      "X-PAYMENT": paymentHeader,
+      "PAYMENT-SIGNATURE": paymentHeader,
     },
     body: options.body,
   });
@@ -880,8 +882,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
         }
 
-        const paymentRequest = await response1.json();
-        const paymentHeader = await createPaymentHeader(wallet, paymentRequest);
+        const body = await response1.json().catch(() => null);
+        const paymentRequired = parsePaymentRequired(response1, body);
+        const paymentHeader = await createPaymentHeader(
+          wallet,
+          paymentRequired,
+        );
 
         // Make payment
         const response2 = await fetch(
@@ -890,7 +896,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "X-PAYMENT": paymentHeader,
+              "PAYMENT-SIGNATURE": paymentHeader,
             },
             body: JSON.stringify({ address: wallet.address }),
           },
