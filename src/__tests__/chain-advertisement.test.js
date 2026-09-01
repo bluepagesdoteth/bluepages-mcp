@@ -4,7 +4,7 @@
  * The mcp server does no client-side address validation by design — an mcp
  * client (the calling LLM) only learns which address families it may pass by
  * reading tool/resource/prompt descriptions. If those descriptions under-
- * advertise (e.g. list only 8 of the 19 families the server actually
+ * advertise (e.g. list only 8 of the 27 families the server actually
  * accepts), the client will decline to pass address formats the server would
  * happily accept — a de-facto client-side rejection bug.
  *
@@ -34,13 +34,13 @@ const README_PATH = path.join(HERE, "..", "..", "README.md");
 const STALE_CHAINS = "ETH, BTC, SOL, TRON, XMR, TON, Celestia, XRP";
 
 describe("SUPPORTED_CHAINS (single source of the advertised chain list)", () => {
-  it("equals the canonical 19-family enumeration", () => {
+  it("equals the canonical 27-family enumeration", () => {
     // Hardcoded independently of src/lib.js's export: every other test in
     // this suite imports/derives from the same const and would move in
     // lockstep with an edit to it. This is the one anchor that wouldn't.
     assert.equal(
       SUPPORTED_CHAINS,
-      "ETH, BTC, LTC, BCH, SOL, TRON, DASH, DOGE, XMR, ZEC, ADA, XLM, ALGO, BNB, LSK, SC, TON, Celestia, XRP",
+      "ETH, BTC, LTC, BCH, SOL, TRON, DASH, DOGE, XMR, ZEC, ADA, XLM, ALGO, BNB, LSK, SC, TON, Celestia, XRP, APT/SUI, DOT, ATOM, ZIL, EGLD, INJ, NEAR, EOS",
     );
   });
 
