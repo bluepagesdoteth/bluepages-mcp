@@ -12,7 +12,7 @@ npx -y github:bluepagesdoteth/bluepages-mcp
 
 Requires either:
 
-- `BLUEPAGES_API_KEY` — get one at [bluepages.fyi/api-keys](https://bluepages.fyi/api-keys.html) (recommended, bulk discounts up to 40%)
+- `BLUEPAGES_API_KEY` — get one at [bluepages.fyi/api-keys](https://bluepages.fyi/api-keys.html) (recommended, up to 40% cheaper than x402 requests)
 - `PRIVATE_KEY` — Ethereum private key for x402 pay-per-request (USDC on Base)
 
 ## Setup
