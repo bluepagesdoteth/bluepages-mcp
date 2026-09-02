@@ -486,7 +486,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `Bluepages is not configured. Set one of these environment variables and restart:\n\n` +
             `Option 1 (recommended): BLUEPAGES_API_KEY\n` +
             `  Get a key at https://bluepages.fyi/api-keys.html\n` +
-            `  20% cheaper, 2x rate limits\n\n` +
+            `  Bulk discounts up to 40%, 2x rate limits\n\n` +
             `Option 2: PRIVATE_KEY\n` +
             `  Private key for x402 payments (USDC on Base)\n` +
             `  No API key needed, pay per request`,
@@ -921,7 +921,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: `✓ Successfully purchased ${result.creditsAdded?.toLocaleString() || pkg.credits.toLocaleString()} credits!\n\nNew balance: ${result.newCredits?.toLocaleString() || "unknown"} credits\nTransaction: ${result.transactionHash || "confirmed"}\n\nYou can now switch to API key authentication for 20% cheaper requests.\nYour wallet address: ${wallet.address}`,
+              text: `✓ Successfully purchased ${result.creditsAdded?.toLocaleString() || pkg.credits.toLocaleString()} credits!\n\nNew balance: ${result.newCredits?.toLocaleString() || "unknown"} credits\nTransaction: ${result.transactionHash || "confirmed"}\n\nYou can now switch to API key authentication (2x rate limits, bulk discounts up to 40%).\nYour wallet address: ${wallet.address}`,
             },
           ],
         };
@@ -989,7 +989,7 @@ Set one of these environment variables and restart:
 
   Option 1 (recommended): BLUEPAGES_API_KEY
     Get a key at https://bluepages.fyi/api-keys.html
-    20% cheaper, 2x rate limits
+    Bulk discounts up to 40%, 2x rate limits
 
   Option 2: PRIVATE_KEY
     Private key for x402 payments (USDC on Base)
