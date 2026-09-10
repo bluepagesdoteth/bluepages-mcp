@@ -5,3 +5,6 @@
 # ignore these settings).
 minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
+
+overrides:
+  qs@>=6.7.0 <6.16.0: 6.16.0
