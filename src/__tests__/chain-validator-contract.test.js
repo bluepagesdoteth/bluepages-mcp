@@ -85,7 +85,7 @@ const EXAMPLE_ADDRESSES = {
   // Added to bluepages-fyi on 2026-08-27 (8 families, 8 patterns).
   "APT/SUI": "0x" + "1234567890abcdef".repeat(4), // shared 32-byte hex format
   DOT: "1" + "A".repeat(47),
-  ATOM: "cosmos1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry",
+  ATOM: "cosmos1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9", // 38 chars after "1" since fyi a0b032b
   ZIL: "zil1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9",
   EGLD: "erd1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9x8gf2tvdw0s3jn54khce",
   INJ: "inj1qpzry9x8gf2tvdw0s3jn54khce6mua7lqpzry9",
@@ -96,7 +96,9 @@ const EXAMPLE_ADDRESSES = {
 // The RE_ const names bluepages-fyi's input-validator.js declares as of this
 // writing — 32 patterns covering the 27 families above (BTC, LTC, ADA, XMR,
 // and ZEC each have 2 address-shape variants; XMR also has a standalone
-// payment-id variant; APT/SUI share one 32-byte hex pattern). If this set ever changes, bluepages-fyi added or
+// payment-id variant; APT/SUI share one 32-byte hex pattern), plus
+// RE_TRUNCATED_HRP, a reject-only guard (not a family) that turns a known
+// bech32 prefix with a bad length into a 400. If this set ever changes, bluepages-fyi added or
 // removed a supported address family and the advertisement needs revisiting:
 // update SUPPORTED_CHAINS in ../lib.js, every mcp-server.js description that
 // uses it, EXAMPLE_ADDRESSES above, and finally this list to the new
@@ -127,6 +129,7 @@ const EXPECTED_RE_NAMES = [
   "RE_SOL",
   "RE_TON",
   "RE_TRON",
+  "RE_TRUNCATED_HRP", // reject-only guard, not an advertised family
   "RE_XLM",
   "RE_XMR",
   "RE_XMR_PAYMENT_ID",
