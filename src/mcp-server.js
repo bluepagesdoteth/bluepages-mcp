@@ -1065,7 +1065,7 @@ Cost Optimization Tips:
 
 Notes:
 - get_data doesn't charge if no data is found
-- Credits never expire
+- Credits bought before the new pricing never expire
 - You earn 1 point for every credit spent (shown on leaderboard)`,
           },
         ],
