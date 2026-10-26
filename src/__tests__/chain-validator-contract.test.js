@@ -94,8 +94,8 @@ const EXAMPLE_ADDRESSES = {
 };
 
 // The RE_ const names bluepages-fyi's input-validator.js declares as of this
-// writing — 32 patterns covering the 27 families above (BTC, LTC, ADA, XMR,
-// and ZEC each have 2 address-shape variants; XMR also has a standalone
+// writing — 33 patterns covering the 27 families above (BTC, LTC, ADA and XMR
+// each have 2 address-shape variants, ZEC has 3; XMR also has a standalone
 // payment-id variant; APT/SUI share one 32-byte hex pattern), plus
 // RE_TRUNCATED_HRP, a reject-only guard (not a family) that turns a known
 // bech32 prefix with a bad length into a 400. If this set ever changes, bluepages-fyi added or
@@ -134,6 +134,7 @@ const EXPECTED_RE_NAMES = [
   "RE_XMR",
   "RE_XMR_PAYMENT_ID",
   "RE_XRP",
+  "RE_ZEC_SAPLING",
   "RE_ZEC_TRANSPARENT",
   "RE_ZEC_UNIFIED",
   "RE_ZIL",
