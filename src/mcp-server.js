@@ -1003,7 +1003,7 @@ ${"─".repeat(60)}
 Bluepages links 6M+ cryptocurrency addresses (${SUPPORTED_CHAINS})
 to 4M+ social accounts (Twitter, Farcaster, GitHub, Discord,
 email, Telegram, Instagram, Reddit, LinkedIn, and more) and
-4,800+ labeled wallets, across 30+ sources.
+7K+ labeled wallets, across 30+ sources.
 
 Authentication Mode: ${AUTH_MODE === "api-key" ? "API Key" : AUTH_MODE === "x402" ? "x402 Payments (USDC on Base)" : "Not configured"}
 ${AUTH_MODE === "api-key" ? "Use check_credits tool to see remaining balance" : ""}
