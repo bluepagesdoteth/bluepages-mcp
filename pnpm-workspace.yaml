@@ -7,4 +7,4 @@ minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 
 overrides:
-  qs@>=6.7.0 <6.16.0: 6.16.0
+  zod@>=4.0.0 <4.6.6: 4.6.6
