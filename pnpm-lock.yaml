@@ -37,10 +37,10 @@ packages:
         integrity: sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ==,
       }
 
-  "@hono/node-server@2.1.5":
+  "@hono/node-server@2.1.9":
     resolution:
       {
-        integrity: sha512-MgP/I06GdvsilDspMk/qmRzpk8LOUStP6jFAbSRi40W09DhoyUn+Mj7eyKICPqeYKybOjVFLVIAQzvu1bfIa7Q==,
+        integrity: sha512-Sk4NQd3GFY0WZWCzndwFMPwJhtD0y9qjsQ+pjID0/03nK9pxyBCUoUHCho8QYBLBVhi0ssL8UkNPHqbgSOFPIQ==,
       }
     engines: { node: ">=20" }
     peerDependencies:
@@ -1055,13 +1055,13 @@ packages:
 snapshots:
   "@adraffy/ens-normalize@1.11.1": {}
 
-  "@hono/node-server@2.1.5(hono@4.13.16)":
+  "@hono/node-server@2.1.9(hono@4.13.16)":
     dependencies:
       hono: 4.13.16
 
   "@modelcontextprotocol/sdk@1.32.2(zod@4.6.6)":
     dependencies:
-      "@hono/node-server": 2.1.5(hono@4.13.16)
+      "@hono/node-server": 2.1.9(hono@4.13.16)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
